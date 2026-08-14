@@ -17,6 +17,7 @@ type AuthContextValue = {
   authDeepLink: AuthDeepLinkState;
   passwordRecovery: boolean;
   signUp: (input: SignUpInput) => Promise<SignUpResult>;
+  resendSignUpConfirmation: (email: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -27,7 +28,17 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-const idleDeepLink: AuthDeepLinkState = { status: 'idle', purpose: null, message: null };
+const idleDeepLink: AuthDeepLinkState = { status: 'idle', purpose: null, message: null, outcome: null };
+const alreadyConfirmedDeepLink: AuthDeepLinkState = {
+  status: 'success',
+  purpose: 'signup',
+  message: 'Este enlace ya fue utilizado. Puedes continuar usando GymTrack.',
+  outcome: 'already-confirmed',
+};
+
+function hasConfirmedEmail(nextSession: Session | null) {
+  return Boolean(nextSession?.user.email_confirmed_at);
+}
 
 function authMessage(reason: unknown) {
   if (!(reason instanceof Error)) return 'No se pudo completar la operación.';
@@ -35,6 +46,7 @@ function authMessage(reason: unknown) {
   if (message.includes('invalid login credentials')) return 'Correo o contraseña incorrectos.';
   if (message.includes('email not confirmed')) return 'Confirma tu correo antes de iniciar sesión.';
   if (message.includes('user already registered')) return 'Ya existe una cuenta con ese correo.';
+  if (message.includes('rate limit') || message.includes('too many requests') || message.includes('over_email_send_rate_limit')) return 'Espera un momento antes de solicitar otro correo.';
   if (message.includes('password')) return 'La contraseña no cumple los requisitos de seguridad.';
   if (message.includes('network')) return 'No hay conexión con el servicio de cuenta.';
   return reason.message;
@@ -62,6 +74,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setLoading(false);
       return;
     }
+    if (hasConfirmedEmail(nextSession)) {
+      setAuthDeepLink((current) => current.status === 'error' && current.purpose === 'signup' ? alreadyConfirmedDeepLink : current);
+    }
     if (hydratedUserId.current !== nextSession.user.id) setLoading(true);
     hydratedUserId.current = nextSession.user.id;
     try {
@@ -83,11 +98,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
     handledAuthLinks.current.add(url);
     let purpose: AuthDeepLinkState['purpose'] = getAuthDeepLinkPurpose(url);
     if (!purpose) return;
-    setAuthDeepLink({ status: 'processing', purpose, message: null });
+    setAuthDeepLink({ status: 'processing', purpose, message: null, outcome: null });
     try {
       const recoveryEventsBeforeExchange = passwordRecoveryEventCount.current;
       const result = await exchangeAuthDeepLink(url);
-      if (!result) return;
+      if (!result) throw new Error('El enlace no contiene un callback de autenticación válido.');
       purpose = result.purpose;
       const recoveryEvent = passwordRecoveryEventCount.current > recoveryEventsBeforeExchange;
       if ((purpose === 'recovery') !== recoveryEvent) throw new Error('El enlace no corresponde al flujo solicitado.');
@@ -97,10 +112,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
         status: 'success',
         purpose,
         message: purpose === 'recovery' ? 'Ya puedes elegir una contraseña nueva.' : 'Tu correo quedó confirmado correctamente.',
+        outcome: purpose === 'signup' ? 'confirmed' : null,
       });
     } catch (reason) {
-      setPasswordRecovery(false);
-      setAuthDeepLink({ status: 'error', purpose, message: authMessage(reason) });
+      if (purpose === 'signup') {
+        const { data } = await supabase.auth.getSession();
+        if (hasConfirmedEmail(data.session)) {
+          await hydrate(data.session);
+          setAuthDeepLink(alreadyConfirmedDeepLink);
+          return;
+        }
+      }
+      setAuthDeepLink({ status: 'error', purpose, message: authMessage(reason), outcome: null });
     }
   }, [hydrate]);
 
@@ -115,12 +138,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setPasswordRecovery(false);
         setAuthDeepLink(idleDeepLink);
       }
+      if (event === 'SIGNED_IN' && hasConfirmedEmail(nextSession)) {
+        setAuthDeepLink((current) => current.status === 'error' && current.purpose === 'signup' ? idleDeepLink : current);
+      }
+      if (event === 'INITIAL_SESSION') return;
       setTimeout(() => { if (mounted) void hydrate(nextSession); }, 0);
     });
     const linkSubscription = Linking.addEventListener('url', ({ url }) => { if (mounted) void handleAuthDeepLink(url); });
     void (async () => {
       const initialUrl = await Linking.getInitialURL().catch(() => null);
-      if (mounted && initialUrl) await handleAuthDeepLink(initialUrl);
       const { data, error: sessionError } = await supabase.auth.getSession();
       if (!mounted) return;
       if (sessionError) {
@@ -128,7 +154,22 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setLoading(false);
         return;
       }
-      await hydrate(data.session);
+      const initialPurpose = initialUrl ? getAuthDeepLinkPurpose(initialUrl) : null;
+      if (initialUrl && initialPurpose === 'signup' && hasConfirmedEmail(data.session)) {
+        handledAuthLinks.current.add(initialUrl);
+        await hydrate(data.session);
+        if (mounted) setAuthDeepLink(alreadyConfirmedDeepLink);
+        return;
+      }
+      if (initialUrl && initialPurpose) await handleAuthDeepLink(initialUrl);
+      if (!mounted) return;
+      const { data: latestData, error: latestSessionError } = await supabase.auth.getSession();
+      if (latestSessionError) {
+        setError(authMessage(latestSessionError));
+        setLoading(false);
+        return;
+      }
+      await hydrate(latestData.session);
     })();
     return () => { mounted = false; subscription.unsubscribe(); linkSubscription.remove(); };
   }, [handleAuthDeepLink, hydrate]);
@@ -162,9 +203,19 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (signUpError) throw new Error(authMessage(signUpError));
       return { requiresEmailConfirmation: !data.session };
     },
+    resendSignUpConfirmation: async (email) => {
+      const { error: resendError } = await supabase.auth.resend({
+        type: 'signup',
+        email: email.trim().toLowerCase(),
+        options: { emailRedirectTo: SIGNUP_CONFIRMATION_REDIRECT },
+      });
+      if (resendError) throw new Error(authMessage(resendError));
+    },
     signIn: async (email, password) => {
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
       if (signInError) throw new Error(authMessage(signInError));
+      setAuthDeepLink((current) => current.status === 'error' && current.purpose === 'signup' ? idleDeepLink : current);
+      await hydrate(data.session);
     },
     signOut: async () => {
       const { error: signOutError } = await supabase.auth.signOut();

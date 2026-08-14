@@ -10,6 +10,7 @@ import { DATABASE_NAME, initializeDatabase } from '@/database/db';
 import { AuthProvider, useAuth } from '@/providers/AuthProvider';
 import { FeedbackProvider } from '@/providers/FeedbackProvider';
 import { GymTrackProvider, useGymTrack } from '@/providers/GymTrackProvider';
+import { getPostAuthDestination } from '@/services/postAuthNavigation';
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -24,20 +25,25 @@ function RootNavigator() {
   useEffect(() => { if (!resolving) void SplashScreen.hideAsync(); }, [resolving]);
   if (resolving) return <View style={styles.loading}><ActivityIndicator color={colors.primary} size="large" /><Text style={styles.loadingText}>Preparando GymTrack…</Text></View>;
 
-  const hasAccountError = auth.isAuthenticated && !auth.accountProfile;
-  const hasLocalError = auth.isAuthenticated && Boolean(auth.accountProfile) && !local.legacyMigrationRequired && !local.localReady;
-  const needsOnboarding = auth.isAuthenticated && Boolean(auth.accountProfile) && local.localReady && !auth.accountProfile?.onboardingCompleted;
-  const canUseApp = auth.isAuthenticated && Boolean(auth.accountProfile?.onboardingCompleted) && local.localReady;
+  const destination = getPostAuthDestination({
+    isAuthenticated: auth.isAuthenticated,
+    hasAccountProfile: Boolean(auth.accountProfile),
+    accountError: auth.error,
+    legacyMigrationRequired: local.legacyMigrationRequired,
+    localReady: local.localReady,
+    localError: local.error,
+    onboardingCompleted: Boolean(auth.accountProfile?.onboardingCompleted),
+  });
 
   return <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background }, headerShown: false }}>
     <Stack.Screen name="auth/callback" />
     <Stack.Screen name="reset-password" />
     <Stack.Protected guard={!auth.isAuthenticated}><Stack.Screen name="(auth)" /></Stack.Protected>
-    <Stack.Protected guard={hasAccountError}><Stack.Screen name="account-error" /></Stack.Protected>
-    <Stack.Protected guard={auth.isAuthenticated && Boolean(auth.accountProfile) && local.legacyMigrationRequired}><Stack.Screen name="legacy-data" /></Stack.Protected>
-    <Stack.Protected guard={hasLocalError}><Stack.Screen name="local-data-error" /></Stack.Protected>
-    <Stack.Protected guard={needsOnboarding}><Stack.Screen name="onboarding" /><Stack.Screen name="onboarding-weekly-plan" /></Stack.Protected>
-    <Stack.Protected guard={canUseApp}><Stack.Screen name="(tabs)" /><Stack.Screen name="profile" /><Stack.Screen name="weekly-plan" /></Stack.Protected>
+    <Stack.Protected guard={destination === '/account-error'}><Stack.Screen name="account-error" /></Stack.Protected>
+    <Stack.Protected guard={destination === '/legacy-data'}><Stack.Screen name="legacy-data" /></Stack.Protected>
+    <Stack.Protected guard={destination === '/local-data-error'}><Stack.Screen name="local-data-error" /></Stack.Protected>
+    <Stack.Protected guard={destination === '/onboarding'}><Stack.Screen name="onboarding" /><Stack.Screen name="onboarding-weekly-plan" /></Stack.Protected>
+    <Stack.Protected guard={destination === '/(tabs)'}><Stack.Screen name="(tabs)" /><Stack.Screen name="profile" /><Stack.Screen name="weekly-plan" /></Stack.Protected>
   </Stack>;
 }
 

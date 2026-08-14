@@ -22,4 +22,5 @@ export type AuthDeepLinkState = {
   status: 'idle' | 'processing' | 'success' | 'error';
   purpose: AuthDeepLinkPurpose | null;
   message: string | null;
+  outcome: 'confirmed' | 'already-confirmed' | null;
 };

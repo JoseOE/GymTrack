@@ -24,7 +24,8 @@ import { getPlanForDate, getWeeklyTarget } from '@/services/weeklyPlanService';
 type CompletedSnapshot = { completed_at: string; counts_toward_goal: number };
 
 type GymTrackContextValue = {
-  loading: boolean;
+  initializing: boolean;
+  refreshing: boolean;
   error: string | null;
   localReady: boolean;
   legacyMigrationRequired: boolean;
@@ -87,7 +88,9 @@ function isSameLocalDay(left: string, right: Date) {
 export function GymTrackProvider({ children }: PropsWithChildren) {
   const db = useSQLiteContext();
   const { accountProfile, updateDisplayName, user } = useAuth();
-  const [loading, setLoading] = useState(true);
+  const authenticatedUserId = user?.id ?? null;
+  const [initializing, setInitializing] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadedUserId, setLoadedUserId] = useState<string | null>(null);
   const [legacyMigrationRequired, setLegacyMigrationRequired] = useState(false);
@@ -101,8 +104,15 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
   const [completedDates, setCompletedDates] = useState<string[]>([]);
   const [completedSnapshots, setCompletedSnapshots] = useState<CompletedSnapshot[]>([]);
   const refreshId = useRef(0);
+  const loadedUserIdRef = useRef<string | null>(null);
+  const accountDisplayNameRef = useRef(accountProfile?.displayName ?? 'Atleta');
+
+  useEffect(() => {
+    accountDisplayNameRef.current = accountProfile?.displayName ?? 'Atleta';
+  }, [accountProfile?.displayName]);
 
   const clearPrivateState = useCallback(() => {
+    loadedUserIdRef.current = null;
     setLoadedUserId(null);
     setProfile(null);
     setWeeklyPlan(null);
@@ -116,16 +126,23 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
 
   const refresh = useCallback(async () => {
     const requestId = ++refreshId.current;
-    if (!user) {
+    if (!authenticatedUserId) {
       clearPrivateState();
       setLegacyMigrationRequired(false);
       setError(null);
-      setLoading(false);
+      setInitializing(false);
+      setRefreshing(false);
       return;
     }
-    setLoading(true);
+    const isInitialLoad = loadedUserIdRef.current !== authenticatedUserId;
+    if (isInitialLoad) {
+      setError(null);
+      setInitializing(true);
+    } else {
+      setRefreshing(true);
+    }
     try {
-      const legacy = await getLegacyDataStatus(db, user.id);
+      const legacy = await getLegacyDataStatus(db, authenticatedUserId);
       if (requestId !== refreshId.current) return;
       if (legacy.requiresDecision) {
         clearPrivateState();
@@ -134,11 +151,11 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
         return;
       }
       setLegacyMigrationRequired(false);
-      const nextProfile = await ensureUserWorkspace(db, user.id, accountProfile?.displayName ?? 'Atleta');
+      const nextProfile = await ensureUserWorkspace(db, authenticatedUserId, accountDisplayNameRef.current);
       const [nextPlan, nextMuscles, nextActive, nextPending, nextRecent, nextDates, nextSnapshots] = await Promise.all([
-        ensureActiveWeeklyPlan(db, user.id), listMuscleGroups(db), getActiveWorkout(db, user.id),
-        getPendingRoutineSummary(db, user.id), listRecentWorkouts(db, user.id), listCompletedDates(db, user.id, historyStartIso()),
-        listCompletedSessionSnapshots(db, user.id, historyStartIso()),
+        ensureActiveWeeklyPlan(db, authenticatedUserId), listMuscleGroups(db), getActiveWorkout(db, authenticatedUserId),
+        getPendingRoutineSummary(db, authenticatedUserId), listRecentWorkouts(db, authenticatedUserId), listCompletedDates(db, authenticatedUserId, historyStartIso()),
+        listCompletedSessionSnapshots(db, authenticatedUserId, historyStartIso()),
       ]);
       if (requestId !== refreshId.current) return;
       setProfile(nextProfile);
@@ -149,25 +166,31 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
       setRecentWorkouts(nextRecent);
       setCompletedDates(nextDates);
       setCompletedSnapshots(nextSnapshots);
-      setLoadedUserId(user.id);
+      loadedUserIdRef.current = authenticatedUserId;
+      setLoadedUserId(authenticatedUserId);
       setError(null);
     } catch (reason) {
       if (requestId !== refreshId.current) return;
       clearPrivateState();
       setError(reason instanceof Error ? reason.message : 'No se pudieron cargar los datos locales.');
     } finally {
-      if (requestId === refreshId.current) setLoading(false);
+      if (requestId === refreshId.current) {
+        if (isInitialLoad) setInitializing(false);
+        else setRefreshing(false);
+      }
     }
-  }, [accountProfile, clearPrivateState, db, user]);
+  }, [authenticatedUserId, clearPrivateState, db]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       clearPrivateState();
-      setLoading(Boolean(user));
+      setLegacyMigrationRequired(false);
+      setInitializing(Boolean(authenticatedUserId));
+      setRefreshing(false);
       void refresh();
     }, 0);
     return () => clearTimeout(timer);
-  }, [clearPrivateState, refresh, user]);
+  }, [authenticatedUserId, clearPrivateState, refresh]);
 
   const weeklyProgress = useMemo<WeeklyProgress>(() => {
     const weekStart = startOfWeek();
@@ -181,14 +204,15 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
   }, [completedSnapshots, weeklyPlan]);
   const todayCompletedWorkout = useMemo(() => recentWorkouts.find((workout) => isSameLocalDay(workout.completedAt, new Date())) ?? null, [recentWorkouts]);
   const requireUserId = useCallback(() => {
-    if (!user || loadedUserId !== user.id) throw new Error('Los datos del usuario activo todavía no están disponibles.');
-    return user.id;
-  }, [loadedUserId, user]);
+    if (!authenticatedUserId || loadedUserId !== authenticatedUserId) throw new Error('Los datos del usuario activo todavía no están disponibles.');
+    return authenticatedUserId;
+  }, [authenticatedUserId, loadedUserId]);
 
   const value: GymTrackContextValue = {
-    loading,
+    initializing,
+    refreshing,
     error,
-    localReady: Boolean(user && loadedUserId === user.id),
+    localReady: Boolean(authenticatedUserId && loadedUserId === authenticatedUserId),
     legacyMigrationRequired,
     pendingOnboardingProfile,
     profile,

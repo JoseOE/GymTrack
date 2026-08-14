@@ -12,12 +12,12 @@ import { getDefaultExerciseCount, getPlanForDate } from '@/services/weeklyPlanSe
 const dayOrder = [1, 2, 3, 4, 5, 6, 0];
 
 export function HomeScreen() {
-  const { activeWorkout, beginWorkout, loading, localReady, pendingRoutine, profile, todayCompletedWorkout, weeklyPlan, weeklyProgress } = useGymTrack();
+  const { activeWorkout, beginWorkout, initializing, localReady, pendingRoutine, profile, refreshing, todayCompletedWorkout, weeklyPlan, weeklyProgress } = useGymTrack();
   const { showToast } = useFeedback();
   const [starting, setStarting] = useState(false);
   const now = new Date();
   const today = new Intl.DateTimeFormat('es-MX', { weekday: 'long', day: 'numeric', month: 'long' }).format(now);
-  if (!weeklyPlan) return <Screen><ScreenHeader title="GymTrack" subtitle={loading ? 'Cargando tu plan semanal…' : 'Plan semanal no disponible'} /></Screen>;
+  if (!weeklyPlan) return <Screen><ScreenHeader title="GymTrack" subtitle={initializing || refreshing ? 'Cargando tu plan semanal…' : 'Plan semanal no disponible'} /></Screen>;
   const schedule = getPlanForDate(weeklyPlan, now);
   const isRest = schedule.sessionType === 'rest';
   const percentage = weeklyProgress.target ? Math.min(100, Math.max(0, (weeklyProgress.completed / weeklyProgress.target) * 100)) : 0;
@@ -56,7 +56,7 @@ export function HomeScreen() {
           <View style={styles.divider} />
           <Metric icon="barbell-outline" label="Ejercicios" value={String(activeWorkout?.exercises.length ?? todayCompletedWorkout?.exerciseCount ?? plannedExercises)} />
         </View>
-        <PrimaryButton disabled={!localReady || !weeklyPlan} icon={primaryIcon} loading={loading || starting} title={primaryTitle} onPress={() => void handleWorkout()} />
+        <PrimaryButton disabled={!localReady || !weeklyPlan} icon={primaryIcon} loading={refreshing || starting} title={primaryTitle} onPress={() => void handleWorkout()} />
       </Card>
       <View style={styles.section}><SectionTitle detail={`${weeklyProgress.completed} de ${weeklyProgress.target} sesiones reales`}>Progreso semanal</SectionTitle><Card><View style={styles.progressCopy}><Text style={styles.progressValue}>{Math.round(percentage)}%</Text><Text style={styles.progressHint}>{weeklyProgress.completed ? 'Cada marca viene de tu historial local.' : 'Completa una sesión para comenzar.'}</Text></View><ProgressBar value={percentage} /><View style={styles.days}>{['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((day, index) => { const completed = weeklyProgress.completedDays.includes(dayOrder[index]); return <View key={day} style={styles.day}><View style={[styles.dayCircle, completed && styles.dayComplete]}>{completed ? <Ionicons color={colors.background} name="checkmark" size={15} /> : null}</View><Text style={styles.dayLabel}>{day}</Text></View>; })}</View></Card></View>
     </Screen>

@@ -25,8 +25,8 @@ type WeeklyPlanEditorProps = {
 
 export function WeeklyPlanScreen({ onboarding = false }: { onboarding?: boolean }) {
   const { completeOnboarding } = useAuth();
-  const { clearCustomOnboarding, completeLocalOnboarding, loading, muscleGroups, pendingOnboardingProfile, resetWeeklyPlan, updateWeeklyPlan, weeklyPlan } = useGymTrack();
-  if (!weeklyPlan) return <Screen><ScreenHeader title="Plan semanal" subtitle={loading ? 'Cargando configuración local…' : 'No se encontró un plan activo'} /></Screen>;
+  const { clearCustomOnboarding, completeLocalOnboarding, initializing, muscleGroups, pendingOnboardingProfile, refreshing, resetWeeklyPlan, updateWeeklyPlan, weeklyPlan } = useGymTrack();
+  if (!weeklyPlan) return <Screen><ScreenHeader title="Plan semanal" subtitle={initializing || refreshing ? 'Cargando configuración local…' : 'No se encontró un plan activo'} /></Screen>;
   if (onboarding && !pendingOnboardingProfile) return <Redirect href="/onboarding" />;
   return <WeeklyPlanEditor clearCustomOnboarding={clearCustomOnboarding} completeLocalOnboarding={completeLocalOnboarding} completeOnboarding={completeOnboarding} key={onboarding ? 'onboarding-plan' : weeklyPlan.updatedAt} muscleGroups={muscleGroups} onboarding={onboarding} pendingProfile={pendingOnboardingProfile} plan={weeklyPlan} resetWeeklyPlan={resetWeeklyPlan} updateWeeklyPlan={updateWeeklyPlan} />;
 }

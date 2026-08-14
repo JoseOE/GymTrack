@@ -21,7 +21,8 @@ export default function RootLayout() {
 function RootNavigator() {
   const auth = useAuth();
   const local = useGymTrack();
-  const resolving = auth.loading || (auth.isAuthenticated && local.loading);
+  const initialLocalResolving = auth.isAuthenticated && !local.localReady && !local.error && !local.legacyMigrationRequired;
+  const resolving = auth.loading || initialLocalResolving;
   useEffect(() => { if (!resolving) void SplashScreen.hideAsync(); }, [resolving]);
   if (resolving) return <View style={styles.loading}><ActivityIndicator color={colors.primary} size="large" /><Text style={styles.loadingText}>Preparando GymTrack…</Text></View>;
 

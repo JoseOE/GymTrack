@@ -24,13 +24,16 @@ function useElapsedMinutes(startedAt: string | null) {
 }
 
 export function WorkoutScreen() {
-  const { activeWorkout, addSet, beginWorkout, cancelActiveWorkout, completeWorkout, error, loading, localReady, pendingRoutine, refresh, removeSet, todayCompletedWorkout, updateSet, weeklyPlan } = useGymTrack();
+  const { activeWorkout, addSet, beginWorkout, cancelActiveWorkout, completeWorkout, error, initializing, localReady, pendingRoutine, refresh, refreshing, removeSet, todayCompletedWorkout, updateSet, weeklyPlan } = useGymTrack();
   const { confirm, showToast } = useFeedback();
   const [working, setWorking] = useState(false);
   const elapsed = useElapsedMinutes(activeWorkout?.startedAt ?? null);
   const todaySchedule = weeklyPlan ? getPlanForDate(weeklyPlan, new Date()) : null;
 
-  useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
+  useFocusEffect(useCallback(() => {
+    if (!localReady || activeWorkout || todayCompletedWorkout) return;
+    void refresh();
+  }, [activeWorkout, localReady, refresh, todayCompletedWorkout]));
 
   const start = async (allowRest = false) => {
     setWorking(true);
@@ -55,7 +58,7 @@ export function WorkoutScreen() {
     return result;
   };
 
-  if (loading) return <Screen key="loading"><ScreenHeader title="Entrenar" subtitle="Preparando tu sesión local" /><Card style={styles.centerCard}><ActivityIndicator color={colors.primary} size="large" /><Text style={styles.emptyText}>Cargando entrenamiento…</Text></Card></Screen>;
+  if (initializing || refreshing) return <Screen key="loading"><ScreenHeader title="Entrenar" subtitle={initializing ? 'Preparando tu sesión local' : 'Actualizando tu sesión'} /><Card style={styles.centerCard}><ActivityIndicator color={colors.primary} size="large" /><Text style={styles.emptyText}>{initializing ? 'Cargando entrenamiento…' : 'Comprobando cambios locales…'}</Text></Card></Screen>;
   if (activeWorkout) {
     const sets = activeWorkout.exercises.flatMap((exercise) => exercise.sets);
     const completed = sets.filter((set) => set.completed).length;

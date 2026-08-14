@@ -1,0 +1,63 @@
+import type { SQLiteDatabase } from 'expo-sqlite';
+
+import type { CatalogExercise, ExperienceLevel, MuscleGroup } from '@/domain/models';
+
+type ExerciseRow = {
+  id: string;
+  name: string;
+  primary_muscle: string;
+  exercise_family: string;
+  movement_pattern: string;
+  exercise_type: CatalogExercise['exerciseType'];
+  difficulty: ExperienceLevel;
+  unilateral: number;
+  estimated_minutes: number;
+  tags: string;
+};
+
+function mapExercise(row: ExerciseRow): CatalogExercise {
+  return {
+    id: row.id,
+    name: row.name,
+    primaryMuscle: row.primary_muscle,
+    exerciseFamily: row.exercise_family,
+    movementPattern: row.movement_pattern,
+    exerciseType: row.exercise_type,
+    difficulty: row.difficulty,
+    unilateral: row.unilateral === 1,
+    estimatedMinutes: row.estimated_minutes,
+    tags: JSON.parse(row.tags) as string[],
+  };
+}
+
+const exerciseSelect = `SELECT e.id, e.name, m.name AS primary_muscle, e.exercise_family,
+  e.movement_pattern, e.exercise_type, e.difficulty, e.unilateral, e.estimated_minutes, e.tags
+  FROM exercise e JOIN muscle_group m ON m.id = e.primary_muscle_id`;
+
+export async function listExercisesForMuscles(db: SQLiteDatabase, muscles: string[]) {
+  if (muscles.length === 0) return [];
+  const placeholders = muscles.map(() => '?').join(', ');
+  const rows = await db.getAllAsync<ExerciseRow>(
+    `${exerciseSelect} WHERE e.active = 1 AND (m.name IN (${placeholders}) OR m.parent_id IN (
+      SELECT id FROM muscle_group WHERE name IN (${placeholders})
+    )) ORDER BY m.name, e.name`,
+    [...muscles, ...muscles],
+  );
+  return rows.map(mapExercise);
+}
+
+export async function getExercisesByNames(db: SQLiteDatabase, names: string[]) {
+  if (names.length === 0) return [];
+  const placeholders = names.map(() => '?').join(', ');
+  const rows = await db.getAllAsync<ExerciseRow>(`${exerciseSelect} WHERE e.name IN (${placeholders})`, names);
+  const byName = new Map(rows.map((row) => [row.name, mapExercise(row)]));
+  return names.flatMap((name) => byName.get(name) ?? []);
+}
+
+export async function listMuscleGroups(db: SQLiteDatabase): Promise<MuscleGroup[]> {
+  const rows = await db.getAllAsync<{ id: string; name: string; parent_id: string | null }>(
+    `SELECT id, name, parent_id FROM muscle_group
+     ORDER BY CASE WHEN parent_id IS NULL THEN 0 ELSE 1 END, name`,
+  );
+  return rows.map((row) => ({ id: row.id, name: row.name, parentId: row.parent_id }));
+}

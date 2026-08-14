@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps, PropsWithChildren, ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, radii, spacing, typography } from '@/constants/theme';
@@ -50,18 +50,23 @@ export function IconButton({ icon, label, onPress }: { icon: IconName; label: st
   );
 }
 
-export function PrimaryButton({ title, icon = 'play', onPress }: { title: string; icon?: IconName; onPress?: () => void }) {
+export function PrimaryButton({ title, icon = 'play', onPress, disabled = false, loading = false }: { title: string; icon?: IconName; onPress?: () => void; disabled?: boolean; loading?: boolean }) {
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryPressed]}>
-      <Ionicons color={colors.background} name={icon} size={20} />
+    <Pressable accessibilityRole="button" disabled={disabled || loading} onPress={onPress} style={({ pressed }) => [styles.primaryButton, (disabled || loading) && styles.disabled, pressed && styles.primaryPressed]}>
+      {loading ? <ActivityIndicator color={colors.background} /> : <Ionicons color={colors.background} name={icon} size={20} />}
       <Text style={styles.primaryText}>{title}</Text>
     </Pressable>
   );
 }
 
+export function SecondaryButton({ title, icon, onPress, tone = 'default', disabled = false }: { title: string; icon?: IconName; onPress?: () => void; tone?: 'default' | 'danger'; disabled?: boolean }) {
+  const foreground = tone === 'danger' ? colors.danger : colors.text;
+  return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.secondaryButton, tone === 'danger' && styles.secondaryDanger, pressed && styles.pressed, disabled && styles.disabled]}>{icon ? <Ionicons color={foreground} name={icon} size={18} /> : null}<Text style={[styles.secondaryText, tone === 'danger' && styles.secondaryDangerText]}>{title}</Text></Pressable>;
+}
+
 export function Chip({ label, selected, onPress }: { label: string; selected?: boolean; onPress?: () => void }) {
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={[styles.chip, selected && styles.chipSelected]}>
+    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.chip, selected && styles.chipSelected, pressed && styles.pressed]}>
       <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
     </Pressable>
   );
@@ -96,7 +101,11 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.7 },
   primaryButton: { minHeight: 54, borderRadius: radii.md, backgroundColor: colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.xl },
   primaryPressed: { backgroundColor: colors.primaryPressed },
+  disabled: { opacity: 0.55 },
   primaryText: { ...typography.body, fontWeight: '800', color: colors.background },
+  secondaryButton: { minHeight: 48, borderRadius: radii.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceElevated, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg },
+  secondaryText: { ...typography.body, color: colors.text, fontWeight: '700' },
+  secondaryDanger: { borderColor: `${colors.danger}70` }, secondaryDangerText: { color: colors.danger },
   chip: { borderRadius: radii.pill, paddingVertical: spacing.sm, paddingHorizontal: spacing.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceElevated },
   chipSelected: { backgroundColor: colors.primarySoft, borderColor: colors.primary },
   chipText: { ...typography.caption, color: colors.textMuted },

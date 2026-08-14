@@ -4,28 +4,29 @@ import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import { Card, IconButton, Metric, PrimaryButton, ProgressBar, Screen, ScreenHeader, SectionTitle } from '@/components/ui';
 import { colors, radii, spacing, typography } from '@/constants/theme';
+import { weeklyProgress } from '@/data/mockData';
 
 export function HomeScreen() {
   return (
     <Screen>
-      <ScreenHeader title="GymTrack" subtitle="Miércoles, 14 de agosto" action={<IconButton icon="person-outline" label="Abrir perfil y configuración" onPress={() => Alert.alert('Perfil', 'La configuración estará disponible próximamente.')} />} />
+      <ScreenHeader title="GymTrack" subtitle="Viernes, 14 de agosto" action={<IconButton icon="person-outline" label="Abrir perfil y configuración" onPress={() => Alert.alert('Perfil', 'La configuración estará disponible próximamente.')} />} />
       <Card style={styles.hero}>
         <View style={styles.eyebrow}><View style={styles.dot} /><Text style={styles.eyebrowText}>ENTRENAMIENTO DE HOY</Text></View>
-        <Text style={styles.workout}>Espalda + Bíceps</Text>
+        <Text style={styles.workout}>Pierna completa</Text>
         <Text style={styles.description}>Fuerza · Rutina intermedia</Text>
         <View style={styles.metrics}>
-          <Metric icon="time-outline" label="Duración" value="65 min" />
+          <Metric icon="time-outline" label="Duración" value="75 min" />
           <View style={styles.divider} />
           <Metric icon="barbell-outline" label="Ejercicios" value="6" />
         </View>
         <PrimaryButton title="Iniciar entrenamiento" onPress={() => router.push('/workout')} />
       </Card>
       <View style={styles.section}>
-        <SectionTitle detail="3 de 5 días">Progreso semanal</SectionTitle>
+        <SectionTitle detail={`${weeklyProgress.completed} de ${weeklyProgress.target} días`}>Progreso semanal</SectionTitle>
         <Card>
-          <View style={styles.progressCopy}><Text style={styles.progressValue}>60%</Text><Text style={styles.progressHint}>¡Buen ritmo! Sigue así.</Text></View>
-          <ProgressBar value={60} />
-          <View style={styles.days}>{['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((day, index) => <View key={day} style={styles.day}><View style={[styles.dayCircle, index < 3 && styles.dayComplete]}>{index < 3 ? <Ionicons color={colors.background} name="checkmark" size={15} /> : null}</View><Text style={styles.dayLabel}>{day}</Text></View>)}</View>
+          <View style={styles.progressCopy}><Text style={styles.progressValue}>{Math.round((weeklyProgress.completed / weeklyProgress.target) * 100)}%</Text><Text style={styles.progressHint}>¡Buen ritmo! Sigue así.</Text></View>
+          <ProgressBar value={(weeklyProgress.completed / weeklyProgress.target) * 100} />
+          <View style={styles.days}>{['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((day) => { const completed = weeklyProgress.completedDays.includes(day); return <View key={day} style={styles.day}><View style={[styles.dayCircle, completed && styles.dayComplete]}>{completed ? <Ionicons color={colors.background} name="checkmark" size={15} /> : null}</View><Text style={styles.dayLabel}>{day}</Text></View>; })}</View>
         </Card>
       </View>
     </Screen>

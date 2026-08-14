@@ -30,11 +30,13 @@ function RootNavigator() {
   const canUseApp = auth.isAuthenticated && Boolean(auth.accountProfile?.onboardingCompleted) && local.localReady;
 
   return <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background }, headerShown: false }}>
+    <Stack.Screen name="auth/callback" />
+    <Stack.Screen name="reset-password" />
     <Stack.Protected guard={!auth.isAuthenticated}><Stack.Screen name="(auth)" /></Stack.Protected>
     <Stack.Protected guard={hasAccountError}><Stack.Screen name="account-error" /></Stack.Protected>
     <Stack.Protected guard={auth.isAuthenticated && Boolean(auth.accountProfile) && local.legacyMigrationRequired}><Stack.Screen name="legacy-data" /></Stack.Protected>
     <Stack.Protected guard={hasLocalError}><Stack.Screen name="local-data-error" /></Stack.Protected>
-    <Stack.Protected guard={needsOnboarding}><Stack.Screen name="onboarding" /></Stack.Protected>
+    <Stack.Protected guard={needsOnboarding}><Stack.Screen name="onboarding" /><Stack.Screen name="onboarding-weekly-plan" /></Stack.Protected>
     <Stack.Protected guard={canUseApp}><Stack.Screen name="(tabs)" /><Stack.Screen name="profile" /><Stack.Screen name="weekly-plan" /></Stack.Protected>
   </Stack>;
 }

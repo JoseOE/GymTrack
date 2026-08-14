@@ -1,8 +1,10 @@
 import type { Session, User } from '@supabase/supabase-js';
+import * as Linking from 'expo-linking';
 import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { AccountProfile, SignUpInput, SignUpResult } from '@/domain/auth';
+import type { AccountProfile, AuthDeepLinkState, SignUpInput, SignUpResult } from '@/domain/auth';
 import { supabase } from '@/lib/supabase';
+import { exchangeAuthDeepLink, getAuthDeepLinkPurpose, PASSWORD_RECOVERY_REDIRECT, SIGNUP_CONFIRMATION_REDIRECT } from '@/services/authDeepLinkService';
 import { getOrCreateAccountProfile, updateAccountProfile } from '@/supabase/profilesRepository';
 
 type AuthContextValue = {
@@ -12,16 +14,20 @@ type AuthContextValue = {
   user: User | null;
   accountProfile: AccountProfile | null;
   isAuthenticated: boolean;
+  authDeepLink: AuthDeepLinkState;
+  passwordRecovery: boolean;
   signUp: (input: SignUpInput) => Promise<SignUpResult>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  updateRecoveredPassword: (password: string) => Promise<void>;
   completeOnboarding: (displayName: string) => Promise<void>;
   updateDisplayName: (displayName: string) => Promise<void>;
   refreshAccountProfile: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const idleDeepLink: AuthDeepLinkState = { status: 'idle', purpose: null, message: null };
 
 function authMessage(reason: unknown) {
   if (!(reason instanceof Error)) return 'No se pudo completar la operación.';
@@ -39,8 +45,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [accountProfile, setAccountProfile] = useState<AccountProfile | null>(null);
+  const [authDeepLink, setAuthDeepLink] = useState<AuthDeepLinkState>(idleDeepLink);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
   const hydrationId = useRef(0);
   const hydratedUserId = useRef<string | null>(null);
+  const handledAuthLinks = useRef(new Set<string>());
+  const passwordRecoveryEventCount = useRef(0);
 
   const hydrate = useCallback(async (nextSession: Session | null) => {
     const requestId = ++hydrationId.current;
@@ -68,22 +78,60 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }, []);
 
+  const handleAuthDeepLink = useCallback(async (url: string) => {
+    if (handledAuthLinks.current.has(url)) return;
+    handledAuthLinks.current.add(url);
+    let purpose: AuthDeepLinkState['purpose'] = getAuthDeepLinkPurpose(url);
+    if (!purpose) return;
+    setAuthDeepLink({ status: 'processing', purpose, message: null });
+    try {
+      const recoveryEventsBeforeExchange = passwordRecoveryEventCount.current;
+      const result = await exchangeAuthDeepLink(url);
+      if (!result) return;
+      purpose = result.purpose;
+      const recoveryEvent = passwordRecoveryEventCount.current > recoveryEventsBeforeExchange;
+      if ((purpose === 'recovery') !== recoveryEvent) throw new Error('El enlace no corresponde al flujo solicitado.');
+      if (purpose === 'recovery') setPasswordRecovery(true);
+      await hydrate(result.session);
+      setAuthDeepLink({
+        status: 'success',
+        purpose,
+        message: purpose === 'recovery' ? 'Ya puedes elegir una contraseña nueva.' : 'Tu correo quedó confirmado correctamente.',
+      });
+    } catch (reason) {
+      setPasswordRecovery(false);
+      setAuthDeepLink({ status: 'error', purpose, message: authMessage(reason) });
+    }
+  }, [hydrate]);
+
   useEffect(() => {
     let mounted = true;
-    void supabase.auth.getSession().then(({ data, error: sessionError }) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        passwordRecoveryEventCount.current += 1;
+        setPasswordRecovery(true);
+      }
+      if (event === 'SIGNED_OUT') {
+        setPasswordRecovery(false);
+        setAuthDeepLink(idleDeepLink);
+      }
+      setTimeout(() => { if (mounted) void hydrate(nextSession); }, 0);
+    });
+    const linkSubscription = Linking.addEventListener('url', ({ url }) => { if (mounted) void handleAuthDeepLink(url); });
+    void (async () => {
+      const initialUrl = await Linking.getInitialURL().catch(() => null);
+      if (mounted && initialUrl) await handleAuthDeepLink(initialUrl);
+      const { data, error: sessionError } = await supabase.auth.getSession();
       if (!mounted) return;
       if (sessionError) {
         setError(authMessage(sessionError));
         setLoading(false);
         return;
       }
-      void hydrate(data.session);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setTimeout(() => { if (mounted) void hydrate(nextSession); }, 0);
-    });
-    return () => { mounted = false; subscription.unsubscribe(); };
-  }, [hydrate]);
+      await hydrate(data.session);
+    })();
+    return () => { mounted = false; subscription.unsubscribe(); linkSubscription.remove(); };
+  }, [handleAuthDeepLink, hydrate]);
 
   const refreshAccountProfile = useCallback(async () => {
     if (!session?.user) return;
@@ -103,11 +151,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
     user: session?.user ?? null,
     accountProfile,
     isAuthenticated: Boolean(session?.user),
+    authDeepLink,
+    passwordRecovery,
     signUp: async ({ displayName, email, password }) => {
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim().toLowerCase(),
         password,
-        options: { data: { display_name: displayName.trim() } },
+        options: { data: { display_name: displayName.trim() }, emailRedirectTo: SIGNUP_CONFIRMATION_REDIRECT },
       });
       if (signUpError) throw new Error(authMessage(signUpError));
       return { requiresEmailConfirmation: !data.session };
@@ -122,8 +172,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
       await hydrate(null);
     },
     resetPassword: async (email) => {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase());
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: PASSWORD_RECOVERY_REDIRECT });
       if (resetError) throw new Error(authMessage(resetError));
+    },
+    updateRecoveredPassword: async (password) => {
+      if (!passwordRecovery || !session?.user) throw new Error('Abre un enlace de recuperación válido antes de continuar.');
+      const { error: updateError } = await supabase.auth.updateUser({ password });
+      if (updateError) throw new Error(authMessage(updateError));
+      setPasswordRecovery(false);
+      setAuthDeepLink(idleDeepLink);
     },
     completeOnboarding: async (displayName) => {
       if (!session?.user) throw new Error('La sesión ya no está disponible.');
@@ -134,7 +191,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setAccountProfile(await updateAccountProfile(session.user.id, { displayName }));
     },
     refreshAccountProfile,
-  }), [accountProfile, error, hydrate, loading, refreshAccountProfile, session]);
+  }), [accountProfile, authDeepLink, error, hydrate, loading, passwordRecovery, refreshAccountProfile, session]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

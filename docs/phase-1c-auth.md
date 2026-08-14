@@ -15,12 +15,28 @@ SQLite.
 
 ## Confirmacion y recuperacion de correo
 
-El registro contempla las dos respuestas de Supabase: si hay sesion, el flujo
-continua; si no la hay, muestra `Revisa tu correo` y no simula un login. La
-recuperacion solicita el enlace mediante Supabase, pero completar el retorno en
-una instalacion nativa requiere configurar en Supabase una URL permitida para el
-scheme `gymtrack://` y validar el deep link en un development build. Esta fase no
-incluye una pantalla para establecer una contrasena nueva desde ese enlace.
+El cliente usa PKCE. El registro contempla las dos respuestas de Supabase: si
+hay sesion, el flujo continua; si no la hay, muestra `Revisa tu correo` y no
+simula un login. La confirmacion vuelve a GymTrack, intercambia una sola vez el
+codigo mediante Supabase y muestra el resultado antes de continuar.
+
+La recuperacion vuelve a una pantalla con `Nueva contrasena` y `Confirmar
+contrasena`. Solo habilita el formulario despues de validar el callback PKCE y
+actualiza mediante Supabase Auth. La app no analiza ni registra tokens.
+
+En Supabase Dashboard, dentro de Auth > URL Configuration, deben autorizarse
+exactamente estas Additional Redirect URLs:
+
+```text
+gymtrack://auth/callback
+gymtrack://reset-password
+```
+
+El scheme ya esta declarado como `gymtrack` en `app.json`. Los callbacks nativos
+deben validarse en un development build o binario Android; Expo Go no registra
+el scheme propio de la aplicacion. PKCE requiere abrir el correo en el mismo
+dispositivo e instalacion que inicio el flujo, porque alli se conserva el
+verificador.
 
 ## Migracion SQLite v4
 
@@ -46,6 +62,7 @@ falsa de migracion.
 ## QA que necesita cuentas reales
 
 La prueba completa requiere dos cuentas de prueba y, si Supabase exige confirmar
-correo, acceso a sus bandejas. Se debe comprobar registro, confirmacion, login,
-persistencia tras reinicio, onboarding, logout, aislamiento A/B/A y el flujo de
-consentimiento en una instalacion que ya tenga datos de Fase 1B.
+correo, acceso a sus bandejas. Se debe comprobar registro, confirmacion y
+callback PKCE, login, recuperacion y cambio de contrasena, persistencia tras
+reinicio, onboarding, logout, aislamiento A/B/A y el flujo de consentimiento en
+una instalacion que ya tenga datos de Fase 1B.

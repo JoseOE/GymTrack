@@ -15,3 +15,11 @@ export type SignUpInput = {
 export type SignUpResult = {
   requiresEmailConfirmation: boolean;
 };
+
+export type AuthDeepLinkPurpose = 'signup' | 'recovery';
+
+export type AuthDeepLinkState = {
+  status: 'idle' | 'processing' | 'success' | 'error';
+  purpose: AuthDeepLinkPurpose | null;
+  message: string | null;
+};

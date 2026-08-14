@@ -47,9 +47,12 @@ export type ActiveWorkout = {
   id: string;
   routineId: string | null;
   routineName: string | null;
+  sessionName: string;
   startedAt: string;
   exercises: WorkoutExercise[];
 };
+
+export type RemoveWorkoutSetResult = 'removed' | 'completed' | 'last-set' | 'not-found';
 
 export type RecentWorkout = {
   id: string;
@@ -77,4 +80,11 @@ export type RoutinePreview = {
   name: string;
   estimatedMinutes: number;
   exercises: RoutinePreviewExercise[];
+};
+
+export type PendingRoutineSummary = {
+  id: string;
+  name: string;
+  estimatedMinutes: number;
+  exerciseCount: number;
 };

@@ -1,12 +1,15 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import type { RoutinePreview } from '@/domain/models';
+import type { PendingRoutineSummary, RoutinePreview } from '@/domain/models';
 import { createId } from '@/utils/id';
 
 export async function saveRoutine(db: SQLiteDatabase, preview: RoutinePreview) {
   const routineId = createId('routine');
   const now = new Date().toISOString();
   await db.withExclusiveTransactionAsync(async (transaction) => {
+    await transaction.runAsync(
+      'DELETE FROM routine WHERE NOT EXISTS (SELECT 1 FROM workout_session ws WHERE ws.routine_id = routine.id)',
+    );
     await transaction.runAsync(
       'INSERT INTO routine (id, name, estimated_minutes, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
       routineId,
@@ -28,4 +31,17 @@ export async function saveRoutine(db: SQLiteDatabase, preview: RoutinePreview) {
     }
   });
   return routineId;
+}
+
+export async function getPendingRoutineSummary(db: SQLiteDatabase): Promise<PendingRoutineSummary | null> {
+  const row = await db.getFirstAsync<{ id: string; name: string; estimated_minutes: number; exercise_count: number }>(
+    `SELECT r.id, r.name, r.estimated_minutes, COUNT(re.id) AS exercise_count
+     FROM routine r
+     JOIN routine_exercise re ON re.routine_id = r.id
+     WHERE NOT EXISTS (SELECT 1 FROM workout_session ws WHERE ws.routine_id = r.id)
+     GROUP BY r.id
+     ORDER BY r.updated_at DESC
+     LIMIT 1`,
+  );
+  return row ? { id: row.id, name: row.name, estimatedMinutes: row.estimated_minutes, exerciseCount: row.exercise_count } : null;
 }

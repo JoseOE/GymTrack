@@ -1,59 +1,119 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import type { ActiveWorkout, RecentWorkout, WorkoutExercise, WorkoutSet } from '@/domain/models';
+import { listExercisesForMuscles } from '@/database/repositories/catalogRepository';
+import type { ActiveWorkout, CatalogExercise, RecentWorkout, RemoveWorkoutSetResult, WorkoutExercise, WorkoutSet } from '@/domain/models';
+import type { WorkoutScheduleEntry } from '@/constants/workoutSchedule';
 import { createId } from '@/utils/id';
 
-type ActiveRow = {
+type ActiveHeaderRow = {
   session_id: string;
   routine_id: string | null;
   routine_name: string | null;
+  display_name: string | null;
   started_at: string;
+};
+
+type ActiveExerciseRow = {
   workout_exercise_id: string;
   exercise_id: string;
   exercise_name: string;
   muscle_name: string;
   order_index: number;
-  set_id: string;
-  set_number: number;
-  weight_kg: number;
-  repetitions: number;
-  completed: number;
+  set_id: string | null;
+  set_number: number | null;
+  weight_kg: number | null;
+  repetitions: number | null;
+  completed: number | null;
 };
 
 type RoutineExerciseRow = { exercise_id: string; order_index: number; target_sets: number };
 
 export async function getActiveWorkout(db: SQLiteDatabase): Promise<ActiveWorkout | null> {
-  const rows = await db.getAllAsync<ActiveRow>(
-    `SELECT ws.id AS session_id, ws.routine_id, r.name AS routine_name, ws.started_at,
-      we.id AS workout_exercise_id, we.exercise_id, e.name AS exercise_name, mg.name AS muscle_name,
-      we.order_index, sets.id AS set_id, sets.set_number, sets.weight_kg, sets.repetitions, sets.completed
+  const header = await db.getFirstAsync<ActiveHeaderRow>(
+    `SELECT ws.id AS session_id, ws.routine_id, r.name AS routine_name, ws.display_name, ws.started_at
      FROM workout_session ws
      LEFT JOIN routine r ON r.id = ws.routine_id
-     JOIN workout_exercise we ON we.workout_session_id = ws.id
+     WHERE ws.status = 'active'
+     ORDER BY ws.started_at DESC, ws.id DESC
+     LIMIT 1`,
+  );
+  if (!header) return null;
+
+  const rows = await db.getAllAsync<ActiveExerciseRow>(
+    `SELECT we.id AS workout_exercise_id, we.exercise_id, e.name AS exercise_name,
+      mg.name AS muscle_name, we.order_index, sets.id AS set_id, sets.set_number,
+      sets.weight_kg, sets.repetitions, sets.completed
+     FROM workout_exercise we
      JOIN exercise e ON e.id = we.exercise_id
      JOIN muscle_group mg ON mg.id = e.primary_muscle_id
-     JOIN workout_set sets ON sets.workout_exercise_id = we.id
-     WHERE ws.status = 'active'
-     ORDER BY ws.started_at DESC, we.order_index, sets.set_number`,
+     LEFT JOIN workout_set sets ON sets.workout_exercise_id = we.id
+     WHERE we.workout_session_id = ?
+     ORDER BY we.order_index, sets.set_number`,
+    header.session_id,
   );
-  if (rows.length === 0) return null;
-  const first = rows[0];
+
   const exerciseMap = new Map<string, WorkoutExercise>();
-  for (const row of rows.filter((item) => item.session_id === first.session_id)) {
+  for (const row of rows) {
     let exercise = exerciseMap.get(row.workout_exercise_id);
     if (!exercise) {
       exercise = { id: row.workout_exercise_id, exerciseId: row.exercise_id, name: row.exercise_name, muscle: row.muscle_name, orderIndex: row.order_index, sets: [] };
       exerciseMap.set(row.workout_exercise_id, exercise);
     }
-    exercise.sets.push({ id: row.set_id, setNumber: row.set_number, weightKg: row.weight_kg, repetitions: row.repetitions, completed: row.completed === 1 });
+    if (row.set_id && row.set_number !== null) {
+      exercise.sets.push({
+        id: row.set_id,
+        setNumber: row.set_number,
+        weightKg: row.weight_kg ?? 0,
+        repetitions: row.repetitions ?? 0,
+        completed: row.completed === 1,
+      });
+    }
   }
-  return { id: first.session_id, routineId: first.routine_id, routineName: first.routine_name, startedAt: first.started_at, exercises: [...exerciseMap.values()] };
+  return {
+    id: header.session_id,
+    routineId: header.routine_id,
+    routineName: header.routine_name,
+    sessionName: header.routine_name ?? header.display_name ?? 'Entrenamiento',
+    startedAt: header.started_at,
+    exercises: [...exerciseMap.values()],
+  };
 }
 
-export async function startWorkout(db: SQLiteDatabase) {
+function matchesScheduleMuscle(primaryMuscle: string, scheduleMuscle: string) {
+  return primaryMuscle === scheduleMuscle || (scheduleMuscle === 'Hombro' && primaryMuscle.startsWith('Deltoide'));
+}
+
+async function getScheduleExercises(db: SQLiteDatabase, schedule: WorkoutScheduleEntry) {
+  const catalog = await listExercisesForMuscles(db, schedule.muscles);
+  const targetCount = schedule.muscles.length === 1 ? 1 : Math.min(6, Math.max(3, schedule.muscles.length));
+  const selected: CatalogExercise[] = [];
+  let candidateIndex = 0;
+  while (selected.length < targetCount) {
+    let added = false;
+    for (const muscle of schedule.muscles) {
+      const candidates = catalog.filter((exercise) => matchesScheduleMuscle(exercise.primaryMuscle, muscle));
+      const candidate = candidates[candidateIndex];
+      if (candidate && !selected.some((exercise) => exercise.id === candidate.id)) {
+        selected.push(candidate);
+        added = true;
+        if (selected.length === targetCount) break;
+      }
+    }
+    if (!added) break;
+    candidateIndex += 1;
+  }
+  return selected.map((exercise, orderIndex) => ({ exercise_id: exercise.id, order_index: orderIndex, target_sets: exercise.exerciseType === 'cardio' ? 1 : 3 }));
+}
+
+export async function startWorkout(db: SQLiteDatabase, schedule: WorkoutScheduleEntry) {
   const active = await getActiveWorkout(db);
   if (active) return active;
-  const routine = await db.getFirstAsync<{ id: string }>('SELECT id FROM routine ORDER BY updated_at DESC LIMIT 1');
+
+  const routine = await db.getFirstAsync<{ id: string; name: string }>(
+    `SELECT r.id, r.name FROM routine r
+     WHERE NOT EXISTS (SELECT 1 FROM workout_session ws WHERE ws.routine_id = r.id)
+     ORDER BY r.updated_at DESC LIMIT 1`,
+  );
   let exercises: RoutineExerciseRow[];
   if (routine) {
     exercises = await db.getAllAsync<RoutineExerciseRow>(
@@ -61,23 +121,18 @@ export async function startWorkout(db: SQLiteDatabase) {
       routine.id,
     );
   } else {
-    const names = ['Jalón al pecho agarre abierto', 'Remo sentado polea baja', 'Curl mancuernas'];
-    const rows = await db.getAllAsync<{ id: string; name: string }>(
-      'SELECT id, name FROM exercise WHERE name IN (?, ?, ?)',
-      names,
-    );
-    const byName = new Map(rows.map((row) => [row.name, row.id]));
-    exercises = names.map((name, orderIndex) => ({ exercise_id: byName.get(name) ?? '', order_index: orderIndex, target_sets: 3 })).filter((item) => item.exercise_id);
+    exercises = await getScheduleExercises(db, schedule);
   }
-  if (exercises.length === 0) throw new Error('No hay ejercicios disponibles para iniciar la sesión.');
+  if (exercises.length === 0) throw new Error('No hay ejercicios disponibles para el plan de hoy.');
 
   const sessionId = createId('workout');
   const now = new Date().toISOString();
   await db.withExclusiveTransactionAsync(async (transaction) => {
     await transaction.runAsync(
-      'INSERT INTO workout_session (id, routine_id, started_at, status) VALUES (?, ?, ?, ?)',
+      'INSERT INTO workout_session (id, routine_id, display_name, started_at, status) VALUES (?, ?, ?, ?, ?)',
       sessionId,
       routine?.id ?? null,
+      routine?.name ?? schedule.workoutName,
       now,
       'active',
     );
@@ -131,9 +186,18 @@ export async function addWorkoutSet(db: SQLiteDatabase, workoutExerciseId: strin
   );
 }
 
-export async function deleteWorkoutSet(db: SQLiteDatabase, setId: string) {
+export async function deleteWorkoutSet(db: SQLiteDatabase, setId: string): Promise<RemoveWorkoutSetResult> {
+  const set = await db.getFirstAsync<{ completed: number; set_count: number }>(
+    `SELECT target.completed,
+      (SELECT COUNT(*) FROM workout_set siblings WHERE siblings.workout_exercise_id = target.workout_exercise_id) AS set_count
+     FROM workout_set target WHERE target.id = ?`,
+    setId,
+  );
+  if (!set) return 'not-found';
+  if (set.completed === 1) return 'completed';
+  if (set.set_count <= 1) return 'last-set';
   const result = await db.runAsync('DELETE FROM workout_set WHERE id = ? AND completed = 0', setId);
-  return result.changes > 0;
+  return result.changes > 0 ? 'removed' : 'not-found';
 }
 
 export async function finishWorkout(db: SQLiteDatabase, sessionId: string) {
@@ -144,13 +208,20 @@ export async function finishWorkout(db: SQLiteDatabase, sessionId: string) {
   );
 }
 
+export async function cancelWorkout(db: SQLiteDatabase, sessionId: string) {
+  await db.runAsync(
+    `UPDATE workout_session SET status = 'cancelled', completed_at = NULL WHERE id = ? AND status = 'active'`,
+    sessionId,
+  );
+}
+
 export async function listRecentWorkouts(db: SQLiteDatabase, limit = 8): Promise<RecentWorkout[]> {
   const rows = await db.getAllAsync<{
     id: string; completed_at: string; title: string | null; duration_minutes: number;
     exercise_count: number; set_count: number;
   }>(
     `SELECT ws.id, ws.completed_at,
-      COALESCE(r.name, GROUP_CONCAT(DISTINCT mg.name)) AS title,
+      COALESCE(r.name, ws.display_name, GROUP_CONCAT(DISTINCT mg.name)) AS title,
       MAX(1, CAST((julianday(ws.completed_at) - julianday(ws.started_at)) * 1440 AS INTEGER)) AS duration_minutes,
       COUNT(DISTINCT we.id) AS exercise_count,
       COUNT(sets.id) AS set_count
@@ -159,7 +230,7 @@ export async function listRecentWorkouts(db: SQLiteDatabase, limit = 8): Promise
      JOIN workout_exercise we ON we.workout_session_id = ws.id
      JOIN exercise e ON e.id = we.exercise_id
      JOIN muscle_group mg ON mg.id = e.primary_muscle_id
-     JOIN workout_set sets ON sets.workout_exercise_id = we.id
+     LEFT JOIN workout_set sets ON sets.workout_exercise_id = we.id
      WHERE ws.status = 'completed' AND ws.completed_at IS NOT NULL
      GROUP BY ws.id
      ORDER BY ws.completed_at DESC

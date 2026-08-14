@@ -1,11 +1,13 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { schemaV1 } from '@/database/schema/v1';
+import { schemaV2 } from '@/database/schema/v2';
 
 type Migration = { version: number; name: string; sql: string };
 
 const migrations: Migration[] = [
   { version: 1, name: 'initial_local_gym_schema', sql: schemaV1 },
+  { version: 2, name: 'single_active_workout_and_session_name', sql: schemaV2 },
 ];
 
 export async function runMigrations(db: SQLiteDatabase) {

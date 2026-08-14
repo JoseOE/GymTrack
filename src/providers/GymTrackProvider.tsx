@@ -2,11 +2,13 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import { getProfile, saveProfile as persistProfile } from '@/database/repositories/profileRepository';
+import { getPendingRoutineSummary } from '@/database/repositories/routineRepository';
 import {
-  addWorkoutSet, deleteWorkoutSet, finishWorkout, getActiveWorkout, listCompletedDates,
+  addWorkoutSet, cancelWorkout, deleteWorkoutSet, finishWorkout, getActiveWorkout, listCompletedDates,
   listRecentWorkouts, saveWorkoutSet, startWorkout,
 } from '@/database/repositories/workoutRepository';
-import type { ActiveWorkout, RecentWorkout, RoutinePreview, UserProfile, WeeklyProgress, WorkoutSet } from '@/domain/models';
+import { getScheduleForDate } from '@/constants/workoutSchedule';
+import type { ActiveWorkout, PendingRoutineSummary, RecentWorkout, RemoveWorkoutSetResult, RoutinePreview, UserProfile, WeeklyProgress, WorkoutSet } from '@/domain/models';
 import { generateRoutinePreview, type RoutineRequest, saveRoutine } from '@/services/gymTrackService';
 
 type GymTrackContextValue = {
@@ -14,16 +16,19 @@ type GymTrackContextValue = {
   error: string | null;
   profile: UserProfile | null;
   activeWorkout: ActiveWorkout | null;
+  todayCompletedWorkout: RecentWorkout | null;
+  pendingRoutine: PendingRoutineSummary | null;
   recentWorkouts: RecentWorkout[];
   completedDates: string[];
   weeklyProgress: WeeklyProgress;
   refresh: () => Promise<void>;
   updateProfile: (profile: UserProfile) => Promise<void>;
-  beginWorkout: () => Promise<ActiveWorkout>;
+  beginWorkout: (options?: { allowRest?: boolean }) => Promise<ActiveWorkout>;
   updateSet: (set: WorkoutSet) => Promise<void>;
   addSet: (workoutExerciseId: string) => Promise<void>;
-  removeSet: (setId: string) => Promise<boolean>;
+  removeSet: (setId: string) => Promise<RemoveWorkoutSetResult>;
   completeWorkout: (sessionId: string) => Promise<void>;
+  cancelActiveWorkout: (sessionId: string) => Promise<void>;
   previewRoutine: (request: RoutineRequest) => Promise<RoutinePreview>;
   acceptRoutine: (preview: RoutinePreview) => Promise<string>;
 };
@@ -45,22 +50,29 @@ function historyStartIso() {
   return date.toISOString();
 }
 
+function isSameLocalDay(left: string, right: Date) {
+  const date = new Date(left);
+  return date.getFullYear() === right.getFullYear() && date.getMonth() === right.getMonth() && date.getDate() === right.getDate();
+}
+
 export function GymTrackProvider({ children }: PropsWithChildren) {
   const db = useSQLiteContext();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [activeWorkout, setActiveWorkout] = useState<ActiveWorkout | null>(null);
+  const [pendingRoutine, setPendingRoutine] = useState<PendingRoutineSummary | null>(null);
   const [recentWorkouts, setRecentWorkouts] = useState<RecentWorkout[]>([]);
   const [completedDates, setCompletedDates] = useState<string[]>([]);
 
   const refresh = useCallback(async () => {
     try {
-      const [nextProfile, nextActive, nextRecent, nextDates] = await Promise.all([
-        getProfile(db), getActiveWorkout(db), listRecentWorkouts(db), listCompletedDates(db, historyStartIso()),
+      const [nextProfile, nextActive, nextPending, nextRecent, nextDates] = await Promise.all([
+        getProfile(db), getActiveWorkout(db), getPendingRoutineSummary(db), listRecentWorkouts(db), listCompletedDates(db, historyStartIso()),
       ]);
       setProfile(nextProfile);
       setActiveWorkout(nextActive);
+      setPendingRoutine(nextPending);
       setRecentWorkouts(nextRecent);
       setCompletedDates(nextDates);
       setError(null);
@@ -82,21 +94,30 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
     target: 5,
     completedDays: [...new Set(weeklyDates.map((value) => new Date(value).getDay()))],
   }), [weeklyDates]);
+  const todayCompletedWorkout = useMemo(() => recentWorkouts.find((workout) => isSameLocalDay(workout.completedAt, new Date())) ?? null, [recentWorkouts]);
 
   const value = useMemo<GymTrackContextValue>(() => ({
     loading,
     error,
     profile,
     activeWorkout,
+    todayCompletedWorkout,
+    pendingRoutine,
     recentWorkouts,
     completedDates,
     weeklyProgress,
     refresh,
     updateProfile: async (nextProfile) => { setProfile(await persistProfile(db, nextProfile)); },
-    beginWorkout: async () => {
-      const workout = await startWorkout(db);
+    beginWorkout: async (options) => {
+      const todaySchedule = getScheduleForDate(new Date());
+      if (todaySchedule.isRest && !options?.allowRest) throw new Error('Hoy es día de descanso.');
+      const schedule = options?.allowRest
+        ? { ...todaySchedule, workoutName: todaySchedule.isRest ? 'Entrenamiento adicional' : `${todaySchedule.workoutName} · Adicional`, muscles: todaySchedule.isRest ? ['Cardio'] : todaySchedule.muscles, estimatedMinutes: todaySchedule.estimatedMinutes ?? 30, isRest: false, isOptional: true }
+        : todaySchedule;
+      const workout = await startWorkout(db, schedule);
       if (!workout) throw new Error('No se pudo iniciar el entrenamiento.');
       setActiveWorkout(workout);
+      setPendingRoutine(null);
       return workout;
     },
     updateSet: async (set) => {
@@ -107,11 +128,12 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
       await saveWorkoutSet(db, set);
     },
     addSet: async (workoutExerciseId) => { await addWorkoutSet(db, workoutExerciseId); setActiveWorkout(await getActiveWorkout(db)); },
-    removeSet: async (setId) => { const removed = await deleteWorkoutSet(db, setId); if (removed) setActiveWorkout(await getActiveWorkout(db)); return removed; },
+    removeSet: async (setId) => { const result = await deleteWorkoutSet(db, setId); if (result === 'removed') setActiveWorkout(await getActiveWorkout(db)); return result; },
     completeWorkout: async (sessionId) => { await finishWorkout(db, sessionId); await refresh(); },
+    cancelActiveWorkout: async (sessionId) => { await cancelWorkout(db, sessionId); await refresh(); },
     previewRoutine: (request) => generateRoutinePreview(db, request),
-    acceptRoutine: (preview) => saveRoutine(db, preview),
-  }), [activeWorkout, completedDates, db, error, loading, profile, recentWorkouts, refresh, weeklyProgress]);
+    acceptRoutine: async (preview) => { const routineId = await saveRoutine(db, preview); setPendingRoutine(await getPendingRoutineSummary(db)); return routineId; },
+  }), [activeWorkout, completedDates, db, error, loading, pendingRoutine, profile, recentWorkouts, refresh, todayCompletedWorkout, weeklyProgress]);
 
   return <GymTrackContext.Provider value={value}>{children}</GymTrackContext.Provider>;
 }

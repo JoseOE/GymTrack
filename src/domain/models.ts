@@ -13,6 +13,51 @@ export type UserProfile = {
   updatedAt: string;
 };
 
+export type MuscleGroup = {
+  id: string;
+  name: string;
+  parentId: string | null;
+};
+
+export type WeeklyPlanSource = 'default' | 'manual' | 'ai';
+export type WeeklyPlanSessionType = 'strength' | 'cardio' | 'rest';
+
+export type WeeklyPlanMuscle = {
+  id: string;
+  name: string;
+  orderIndex: number;
+};
+
+export type WeeklyPlanDay = {
+  id: string;
+  dayIndex: number;
+  sessionType: WeeklyPlanSessionType;
+  displayName: string;
+  estimatedMinutes: number | null;
+  isOptional: boolean;
+  countsTowardGoal: boolean;
+  targetExerciseCount: number | null;
+  muscles: WeeklyPlanMuscle[];
+};
+
+export type WeeklyPlan = {
+  id: string;
+  userProfileId: string;
+  name: string;
+  source: WeeklyPlanSource;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  days: WeeklyPlanDay[];
+};
+
+export type WeeklyPlanDayDraft = Omit<WeeklyPlanDay, 'id'>;
+export type WeeklyPlanDraft = {
+  name: string;
+  source: WeeklyPlanSource;
+  days: WeeklyPlanDayDraft[];
+};
+
 export type CatalogExercise = {
   id: string;
   name: string;
@@ -49,6 +94,8 @@ export type ActiveWorkout = {
   routineName: string | null;
   sessionName: string;
   startedAt: string;
+  scheduledDayIndex: number | null;
+  countsTowardGoal: boolean;
   exercises: WorkoutExercise[];
 };
 

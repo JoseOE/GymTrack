@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import type { CatalogExercise, ExperienceLevel } from '@/domain/models';
+import type { CatalogExercise, ExperienceLevel, MuscleGroup } from '@/domain/models';
 
 type ExerciseRow = {
   id: string;
@@ -52,4 +52,12 @@ export async function getExercisesByNames(db: SQLiteDatabase, names: string[]) {
   const rows = await db.getAllAsync<ExerciseRow>(`${exerciseSelect} WHERE e.name IN (${placeholders})`, names);
   const byName = new Map(rows.map((row) => [row.name, mapExercise(row)]));
   return names.flatMap((name) => byName.get(name) ?? []);
+}
+
+export async function listMuscleGroups(db: SQLiteDatabase): Promise<MuscleGroup[]> {
+  const rows = await db.getAllAsync<{ id: string; name: string; parent_id: string | null }>(
+    `SELECT id, name, parent_id FROM muscle_group
+     ORDER BY CASE WHEN parent_id IS NULL THEN 0 ELSE 1 END, name`,
+  );
+  return rows.map((row) => ({ id: row.id, name: row.name, parentId: row.parent_id }));
 }

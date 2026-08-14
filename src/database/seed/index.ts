@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
+import { ensureActiveWeeklyPlan } from '@/database/repositories/weeklyPlanRepository';
 import { equipmentSeeds, exerciseSeeds, muscleSeeds } from '@/database/seed/catalog';
 
 const SEED_KEY = 'catalog-v1';
@@ -12,9 +13,7 @@ export async function seedDatabase(db: SQLiteDatabase) {
     );
   `);
   const existing = await db.getFirstAsync<{ key: string }>('SELECT key FROM _seed_state WHERE key = ?', SEED_KEY);
-  if (existing) return;
-
-  await db.withExclusiveTransactionAsync(async (transaction) => {
+  if (!existing) await db.withExclusiveTransactionAsync(async (transaction) => {
     for (const [id, name, parentId] of muscleSeeds) {
       await transaction.runAsync(
         'INSERT OR IGNORE INTO muscle_group (id, name, parent_id) VALUES (?, ?, ?)',
@@ -94,4 +93,5 @@ export async function seedDatabase(db: SQLiteDatabase) {
     );
     await transaction.runAsync('INSERT INTO _seed_state (key, applied_at) VALUES (?, ?)', SEED_KEY, now);
   });
+  await ensureActiveWeeklyPlan(db, 'local-user');
 }

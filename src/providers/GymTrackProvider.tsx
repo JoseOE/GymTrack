@@ -1,20 +1,29 @@
 import { useSQLiteContext } from 'expo-sqlite';
 import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
+import { listMuscleGroups } from '@/database/repositories/catalogRepository';
 import { getProfile, saveProfile as persistProfile } from '@/database/repositories/profileRepository';
 import { getPendingRoutineSummary } from '@/database/repositories/routineRepository';
+import { ensureActiveWeeklyPlan, resetWeeklyPlanToDefault, saveWeeklyPlan } from '@/database/repositories/weeklyPlanRepository';
 import {
   addWorkoutSet, cancelWorkout, deleteWorkoutSet, finishWorkout, getActiveWorkout, listCompletedDates,
-  listRecentWorkouts, saveWorkoutSet, startWorkout,
+  listCompletedSessionSnapshots, listRecentWorkouts, saveWorkoutSet, startWorkout,
 } from '@/database/repositories/workoutRepository';
-import { getScheduleForDate } from '@/constants/workoutSchedule';
-import type { ActiveWorkout, PendingRoutineSummary, RecentWorkout, RemoveWorkoutSetResult, RoutinePreview, UserProfile, WeeklyProgress, WorkoutSet } from '@/domain/models';
+import type {
+  ActiveWorkout, MuscleGroup, PendingRoutineSummary, RecentWorkout, RemoveWorkoutSetResult, RoutinePreview,
+  UserProfile, WeeklyPlan, WeeklyPlanDraft, WeeklyProgress, WorkoutSet,
+} from '@/domain/models';
 import { generateRoutinePreview, type RoutineRequest, saveRoutine } from '@/services/gymTrackService';
+import { getPlanForDate, getWeeklyTarget } from '@/services/weeklyPlanService';
+
+type CompletedSnapshot = { completed_at: string; counts_toward_goal: number };
 
 type GymTrackContextValue = {
   loading: boolean;
   error: string | null;
   profile: UserProfile | null;
+  weeklyPlan: WeeklyPlan | null;
+  muscleGroups: MuscleGroup[];
   activeWorkout: ActiveWorkout | null;
   todayCompletedWorkout: RecentWorkout | null;
   pendingRoutine: PendingRoutineSummary | null;
@@ -23,6 +32,8 @@ type GymTrackContextValue = {
   weeklyProgress: WeeklyProgress;
   refresh: () => Promise<void>;
   updateProfile: (profile: UserProfile) => Promise<void>;
+  updateWeeklyPlan: (draft: WeeklyPlanDraft) => Promise<void>;
+  resetWeeklyPlan: () => Promise<void>;
   beginWorkout: (options?: { allowRest?: boolean }) => Promise<ActiveWorkout>;
   updateSet: (set: WorkoutSet) => Promise<void>;
   addSet: (workoutExerciseId: string) => Promise<void>;
@@ -35,12 +46,12 @@ type GymTrackContextValue = {
 
 const GymTrackContext = createContext<GymTrackContextValue | null>(null);
 
-function startOfWeekIso() {
+function startOfWeek() {
   const date = new Date();
   const weekday = date.getDay() || 7;
   date.setDate(date.getDate() - weekday + 1);
   date.setHours(0, 0, 0, 0);
-  return date.toISOString();
+  return date;
 }
 
 function historyStartIso() {
@@ -48,6 +59,11 @@ function historyStartIso() {
   date.setDate(date.getDate() - 35);
   date.setHours(0, 0, 0, 0);
   return date.toISOString();
+}
+
+function localDateKey(value: string) {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function isSameLocalDay(left: string, right: Date) {
@@ -60,21 +76,30 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan | null>(null);
+  const [muscleGroups, setMuscleGroups] = useState<MuscleGroup[]>([]);
   const [activeWorkout, setActiveWorkout] = useState<ActiveWorkout | null>(null);
   const [pendingRoutine, setPendingRoutine] = useState<PendingRoutineSummary | null>(null);
   const [recentWorkouts, setRecentWorkouts] = useState<RecentWorkout[]>([]);
   const [completedDates, setCompletedDates] = useState<string[]>([]);
+  const [completedSnapshots, setCompletedSnapshots] = useState<CompletedSnapshot[]>([]);
 
   const refresh = useCallback(async () => {
     try {
-      const [nextProfile, nextActive, nextPending, nextRecent, nextDates] = await Promise.all([
-        getProfile(db), getActiveWorkout(db), getPendingRoutineSummary(db), listRecentWorkouts(db), listCompletedDates(db, historyStartIso()),
+      const nextProfile = await getProfile(db);
+      const [nextPlan, nextMuscles, nextActive, nextPending, nextRecent, nextDates, nextSnapshots] = await Promise.all([
+        ensureActiveWeeklyPlan(db, nextProfile.id), listMuscleGroups(db), getActiveWorkout(db),
+        getPendingRoutineSummary(db), listRecentWorkouts(db), listCompletedDates(db, historyStartIso()),
+        listCompletedSessionSnapshots(db, historyStartIso()),
       ]);
       setProfile(nextProfile);
+      setWeeklyPlan(nextPlan);
+      setMuscleGroups(nextMuscles);
       setActiveWorkout(nextActive);
       setPendingRoutine(nextPending);
       setRecentWorkouts(nextRecent);
       setCompletedDates(nextDates);
+      setCompletedSnapshots(nextSnapshots);
       setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'No se pudieron cargar los datos locales.');
@@ -88,18 +113,24 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
     return () => clearTimeout(timer);
   }, [refresh]);
 
-  const weeklyDates = useMemo(() => completedDates.filter((value) => value >= startOfWeekIso()), [completedDates]);
-  const weeklyProgress = useMemo<WeeklyProgress>(() => ({
-    completed: weeklyDates.length,
-    target: 5,
-    completedDays: [...new Set(weeklyDates.map((value) => new Date(value).getDay()))],
-  }), [weeklyDates]);
+  const weeklyProgress = useMemo<WeeklyProgress>(() => {
+    const weekStart = startOfWeek();
+    const thisWeek = completedSnapshots.filter((snapshot) => new Date(snapshot.completed_at) >= weekStart);
+    const goalDates = new Set(thisWeek.filter((snapshot) => snapshot.counts_toward_goal === 1).map((snapshot) => localDateKey(snapshot.completed_at)));
+    return {
+      completed: goalDates.size,
+      target: weeklyPlan ? getWeeklyTarget(weeklyPlan) : 0,
+      completedDays: [...new Set(thisWeek.map((snapshot) => new Date(snapshot.completed_at).getDay()))],
+    };
+  }, [completedSnapshots, weeklyPlan]);
   const todayCompletedWorkout = useMemo(() => recentWorkouts.find((workout) => isSameLocalDay(workout.completedAt, new Date())) ?? null, [recentWorkouts]);
 
   const value = useMemo<GymTrackContextValue>(() => ({
     loading,
     error,
     profile,
+    weeklyPlan,
+    muscleGroups,
     activeWorkout,
     todayCompletedWorkout,
     pendingRoutine,
@@ -108,13 +139,27 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
     weeklyProgress,
     refresh,
     updateProfile: async (nextProfile) => { setProfile(await persistProfile(db, nextProfile)); },
+    updateWeeklyPlan: async (draft) => {
+      if (!profile) throw new Error('No se encontró el perfil local.');
+      await saveWeeklyPlan(db, profile.id, { ...draft, source: 'manual' });
+      await refresh();
+    },
+    resetWeeklyPlan: async () => {
+      if (!profile) throw new Error('No se encontró el perfil local.');
+      await resetWeeklyPlanToDefault(db, profile.id);
+      await refresh();
+    },
     beginWorkout: async (options) => {
-      const todaySchedule = getScheduleForDate(new Date());
-      if (todaySchedule.isRest && !options?.allowRest) throw new Error('Hoy es día de descanso.');
-      const schedule = options?.allowRest
-        ? { ...todaySchedule, workoutName: todaySchedule.isRest ? 'Entrenamiento adicional' : `${todaySchedule.workoutName} · Adicional`, muscles: todaySchedule.isRest ? ['Cardio'] : todaySchedule.muscles, estimatedMinutes: todaySchedule.estimatedMinutes ?? 30, isRest: false, isOptional: true }
-        : todaySchedule;
-      const workout = await startWorkout(db, schedule);
+      if (!weeklyPlan) throw new Error('No se encontró un plan semanal activo.');
+      const todayPlan = getPlanForDate(weeklyPlan, new Date());
+      const isAdditional = options?.allowRest === true;
+      if (todayPlan.sessionType === 'rest' && !isAdditional) throw new Error('Hoy es día de descanso.');
+      const cardio = muscleGroups.find((muscle) => muscle.id === 'cardio');
+      const sessionPlan = todayPlan.sessionType === 'rest' && isAdditional
+        ? { ...todayPlan, sessionType: 'cardio' as const, displayName: 'Entrenamiento adicional', estimatedMinutes: 30, isOptional: true, countsTowardGoal: false, muscles: cardio ? [{ ...cardio, orderIndex: 0 }] : [] }
+        : todayPlan;
+      if (sessionPlan.muscles.length === 0) throw new Error('No hay músculos configurados para esta sesión.');
+      const workout = await startWorkout(db, sessionPlan, isAdditional);
       if (!workout) throw new Error('No se pudo iniciar el entrenamiento.');
       setActiveWorkout(workout);
       setPendingRoutine(null);
@@ -133,7 +178,7 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
     cancelActiveWorkout: async (sessionId) => { await cancelWorkout(db, sessionId); await refresh(); },
     previewRoutine: (request) => generateRoutinePreview(db, request),
     acceptRoutine: async (preview) => { const routineId = await saveRoutine(db, preview); setPendingRoutine(await getPendingRoutineSummary(db)); return routineId; },
-  }), [activeWorkout, completedDates, db, error, loading, pendingRoutine, profile, recentWorkouts, refresh, todayCompletedWorkout, weeklyProgress]);
+  }), [activeWorkout, completedDates, db, error, loading, muscleGroups, pendingRoutine, profile, recentWorkouts, refresh, todayCompletedWorkout, weeklyPlan, weeklyProgress]);
 
   return <GymTrackContext.Provider value={value}>{children}</GymTrackContext.Provider>;
 }

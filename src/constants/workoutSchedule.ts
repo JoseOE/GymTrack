@@ -1,34 +1,35 @@
-export type WorkoutScheduleEntry = {
-  dayIndex: number;
-  shortDay: string;
-  dayName: string;
-  workoutName: string;
-  muscles: string[];
-  estimatedMinutes: number | null;
-  isRest: boolean;
-  isOptional: boolean;
+import type { WeeklyPlanDraft, WeeklyPlanMuscle } from '@/domain/models';
+
+const muscle = (id: string, name: string, orderIndex: number): WeeklyPlanMuscle => ({ id, name, orderIndex });
+
+export const defaultWeeklyPlanTemplate: WeeklyPlanDraft = {
+  name: 'Mi plan semanal',
+  source: 'default',
+  days: [
+    { dayIndex: 1, sessionType: 'strength', displayName: 'Hombro + Bíceps + Tríceps + Antebrazo', estimatedMinutes: 70, isOptional: false, countsTowardGoal: true, targetExerciseCount: null, muscles: [muscle('hombro', 'Hombro', 0), muscle('biceps', 'Bíceps', 1), muscle('triceps', 'Tríceps', 2), muscle('antebrazo', 'Antebrazo', 3)] },
+    { dayIndex: 2, sessionType: 'strength', displayName: 'Pecho + Espalda', estimatedMinutes: 60, isOptional: false, countsTowardGoal: true, targetExerciseCount: null, muscles: [muscle('pecho', 'Pecho', 0), muscle('espalda', 'Espalda', 1)] },
+    { dayIndex: 3, sessionType: 'strength', displayName: 'Espalda + Bíceps + Antebrazo', estimatedMinutes: 65, isOptional: false, countsTowardGoal: true, targetExerciseCount: null, muscles: [muscle('espalda', 'Espalda', 0), muscle('biceps', 'Bíceps', 1), muscle('antebrazo', 'Antebrazo', 2)] },
+    { dayIndex: 4, sessionType: 'strength', displayName: 'Pecho + Tríceps', estimatedMinutes: 55, isOptional: false, countsTowardGoal: true, targetExerciseCount: null, muscles: [muscle('pecho', 'Pecho', 0), muscle('triceps', 'Tríceps', 1)] },
+    { dayIndex: 5, sessionType: 'strength', displayName: 'Pierna completa', estimatedMinutes: 75, isOptional: false, countsTowardGoal: true, targetExerciseCount: null, muscles: [muscle('cuadriceps', 'Cuádriceps', 0), muscle('femoral', 'Femoral', 1), muscle('gluteo', 'Glúteo', 2), muscle('pantorrilla', 'Pantorrilla', 3), muscle('aductores', 'Aductores', 4), muscle('abductores', 'Abductores', 5)] },
+    { dayIndex: 6, sessionType: 'cardio', displayName: 'Cardio opcional', estimatedMinutes: 30, isOptional: true, countsTowardGoal: false, targetExerciseCount: null, muscles: [muscle('cardio', 'Cardio', 0)] },
+    { dayIndex: 0, sessionType: 'rest', displayName: 'Descanso', estimatedMinutes: null, isOptional: false, countsTowardGoal: false, targetExerciseCount: null, muscles: [] },
+  ],
 };
 
-export const workoutSchedule: readonly WorkoutScheduleEntry[] = [
-  { dayIndex: 1, shortDay: 'L', dayName: 'Lunes', workoutName: 'Hombro + Bíceps + Tríceps + Antebrazo', muscles: ['Hombro', 'Bíceps', 'Tríceps', 'Antebrazo'], estimatedMinutes: 70, isRest: false, isOptional: false },
-  { dayIndex: 2, shortDay: 'M', dayName: 'Martes', workoutName: 'Pecho + Espalda', muscles: ['Pecho', 'Espalda'], estimatedMinutes: 60, isRest: false, isOptional: false },
-  { dayIndex: 3, shortDay: 'X', dayName: 'Miércoles', workoutName: 'Espalda + Bíceps + Antebrazo', muscles: ['Espalda', 'Bíceps', 'Antebrazo'], estimatedMinutes: 65, isRest: false, isOptional: false },
-  { dayIndex: 4, shortDay: 'J', dayName: 'Jueves', workoutName: 'Pecho + Tríceps', muscles: ['Pecho', 'Tríceps'], estimatedMinutes: 55, isRest: false, isOptional: false },
-  { dayIndex: 5, shortDay: 'V', dayName: 'Viernes', workoutName: 'Pierna completa', muscles: ['Cuádriceps', 'Femoral', 'Glúteo', 'Pantorrilla', 'Aductores', 'Abductores'], estimatedMinutes: 75, isRest: false, isOptional: false },
-  { dayIndex: 6, shortDay: 'S', dayName: 'Sábado', workoutName: 'Cardio opcional', muscles: ['Cardio'], estimatedMinutes: 30, isRest: false, isOptional: true },
-  { dayIndex: 0, shortDay: 'D', dayName: 'Domingo', workoutName: 'Descanso', muscles: [], estimatedMinutes: null, isRest: true, isOptional: false },
-];
+export const dayMetadata = [
+  { dayIndex: 0, dayName: 'Domingo', shortDay: 'D' },
+  { dayIndex: 1, dayName: 'Lunes', shortDay: 'L' },
+  { dayIndex: 2, dayName: 'Martes', shortDay: 'M' },
+  { dayIndex: 3, dayName: 'Miércoles', shortDay: 'X' },
+  { dayIndex: 4, dayName: 'Jueves', shortDay: 'J' },
+  { dayIndex: 5, dayName: 'Viernes', shortDay: 'V' },
+  { dayIndex: 6, dayName: 'Sábado', shortDay: 'S' },
+] as const;
 
-export function getScheduleForDate(date: Date) {
-  const entry = workoutSchedule.find((item) => item.dayIndex === date.getDay());
-  if (!entry) throw new Error('No se encontró el plan para este día.');
-  return entry;
-}
-
-export function getNextSchedule(date: Date) {
-  const nextDate = new Date(date);
-  nextDate.setDate(nextDate.getDate() + 1);
-  return getScheduleForDate(nextDate);
+export function getDayMetadata(dayIndex: number) {
+  const metadata = dayMetadata.find((day) => day.dayIndex === dayIndex);
+  if (!metadata) throw new Error('Día semanal inválido.');
+  return metadata;
 }
 
 export function getWeekDates(referenceDate: Date, weekOffset = 0) {

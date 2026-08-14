@@ -1,8 +1,8 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { listExercisesForMuscles } from '@/database/repositories/catalogRepository';
-import type { ActiveWorkout, CatalogExercise, RecentWorkout, RemoveWorkoutSetResult, WorkoutExercise, WorkoutSet } from '@/domain/models';
-import type { WorkoutScheduleEntry } from '@/constants/workoutSchedule';
+import type { ActiveWorkout, CatalogExercise, RecentWorkout, RemoveWorkoutSetResult, WeeklyPlanDay, WorkoutExercise, WorkoutSet } from '@/domain/models';
+import { getDefaultExerciseCount } from '@/services/weeklyPlanService';
 import { createId } from '@/utils/id';
 
 type ActiveHeaderRow = {
@@ -11,6 +11,8 @@ type ActiveHeaderRow = {
   routine_name: string | null;
   display_name: string | null;
   started_at: string;
+  scheduled_day_index: number | null;
+  counts_toward_goal: number;
 };
 
 type ActiveExerciseRow = {
@@ -30,7 +32,8 @@ type RoutineExerciseRow = { exercise_id: string; order_index: number; target_set
 
 export async function getActiveWorkout(db: SQLiteDatabase): Promise<ActiveWorkout | null> {
   const header = await db.getFirstAsync<ActiveHeaderRow>(
-    `SELECT ws.id AS session_id, ws.routine_id, r.name AS routine_name, ws.display_name, ws.started_at
+    `SELECT ws.id AS session_id, ws.routine_id, r.name AS routine_name, ws.display_name, ws.started_at,
+      ws.scheduled_day_index, ws.counts_toward_goal
      FROM workout_session ws
      LEFT JOIN routine r ON r.id = ws.routine_id
      WHERE ws.status = 'active'
@@ -73,8 +76,10 @@ export async function getActiveWorkout(db: SQLiteDatabase): Promise<ActiveWorkou
     id: header.session_id,
     routineId: header.routine_id,
     routineName: header.routine_name,
-    sessionName: header.routine_name ?? header.display_name ?? 'Entrenamiento',
+    sessionName: header.display_name ?? header.routine_name ?? 'Entrenamiento',
     startedAt: header.started_at,
+    scheduledDayIndex: header.scheduled_day_index,
+    countsTowardGoal: header.counts_toward_goal === 1,
     exercises: [...exerciseMap.values()],
   };
 }
@@ -83,14 +88,15 @@ function matchesScheduleMuscle(primaryMuscle: string, scheduleMuscle: string) {
   return primaryMuscle === scheduleMuscle || (scheduleMuscle === 'Hombro' && primaryMuscle.startsWith('Deltoide'));
 }
 
-async function getScheduleExercises(db: SQLiteDatabase, schedule: WorkoutScheduleEntry) {
-  const catalog = await listExercisesForMuscles(db, schedule.muscles);
-  const targetCount = schedule.muscles.length === 1 ? 1 : Math.min(6, Math.max(3, schedule.muscles.length));
+async function getScheduleExercises(db: SQLiteDatabase, day: WeeklyPlanDay) {
+  const muscleNames = day.muscles.map((muscle) => muscle.name);
+  const catalog = await listExercisesForMuscles(db, muscleNames);
+  const targetCount = getDefaultExerciseCount(day);
   const selected: CatalogExercise[] = [];
   let candidateIndex = 0;
   while (selected.length < targetCount) {
     let added = false;
-    for (const muscle of schedule.muscles) {
+    for (const muscle of muscleNames) {
       const candidates = catalog.filter((exercise) => matchesScheduleMuscle(exercise.primaryMuscle, muscle));
       const candidate = candidates[candidateIndex];
       if (candidate && !selected.some((exercise) => exercise.id === candidate.id)) {
@@ -105,7 +111,7 @@ async function getScheduleExercises(db: SQLiteDatabase, schedule: WorkoutSchedul
   return selected.map((exercise, orderIndex) => ({ exercise_id: exercise.id, order_index: orderIndex, target_sets: exercise.exerciseType === 'cardio' ? 1 : 3 }));
 }
 
-export async function startWorkout(db: SQLiteDatabase, schedule: WorkoutScheduleEntry) {
+export async function startWorkout(db: SQLiteDatabase, day: WeeklyPlanDay, isAdditional = false) {
   const active = await getActiveWorkout(db);
   if (active) return active;
 
@@ -121,20 +127,25 @@ export async function startWorkout(db: SQLiteDatabase, schedule: WorkoutSchedule
       routine.id,
     );
   } else {
-    exercises = await getScheduleExercises(db, schedule);
+    exercises = await getScheduleExercises(db, day);
   }
   if (exercises.length === 0) throw new Error('No hay ejercicios disponibles para el plan de hoy.');
 
   const sessionId = createId('workout');
   const now = new Date().toISOString();
+  const sessionName = routine?.name ?? day.displayName;
   await db.withExclusiveTransactionAsync(async (transaction) => {
     await transaction.runAsync(
-      'INSERT INTO workout_session (id, routine_id, display_name, started_at, status) VALUES (?, ?, ?, ?, ?)',
+      `INSERT INTO workout_session
+        (id, routine_id, display_name, started_at, status, scheduled_day_index, counts_toward_goal)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       sessionId,
       routine?.id ?? null,
-      routine?.name ?? schedule.workoutName,
+      isAdditional ? `${sessionName} · Adicional` : sessionName,
       now,
       'active',
+      day.dayIndex,
+      isAdditional ? 0 : day.countsTowardGoal ? 1 : 0,
     );
     for (const exercise of exercises) {
       const workoutExerciseId = createId('workout-exercise');
@@ -247,4 +258,13 @@ export async function listCompletedDates(db: SQLiteDatabase, sinceIso: string) {
     sinceIso,
   );
   return rows.map((row) => row.completed_at);
+}
+
+export async function listCompletedSessionSnapshots(db: SQLiteDatabase, sinceIso: string) {
+  return db.getAllAsync<{ completed_at: string; counts_toward_goal: number }>(
+    `SELECT completed_at, counts_toward_goal FROM workout_session
+     WHERE status = 'completed' AND completed_at IS NOT NULL AND completed_at >= ?
+     ORDER BY completed_at`,
+    sinceIso,
+  );
 }

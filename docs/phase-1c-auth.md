@@ -42,6 +42,13 @@ una pantalla con `Nueva contraseña` y `Confirmar contraseña`, valida el callba
 antes de habilitar el formulario y actualiza mediante Supabase Auth. La app no
 analiza ni registra tokens.
 
+El template **Reset password** debe conservar un enlace con
+`href="{{ .ConfirmationURL }}"`. No debe sustituirse por `{{ .RedirectTo }}`:
+`ConfirmationURL` incluye la verificación de Supabase y devuelve a la app con el
+código PKCE. Durante ese intercambio, GymTrack mantiene
+`gymtrack://reset-password` por encima de Inicio u onboarding hasta recibir
+`PASSWORD_RECOVERY` y completar el cambio de contraseña.
+
 En Supabase Dashboard, dentro de Auth > URL Configuration, deben autorizarse
 exactamente estas Additional Redirect URLs:
 

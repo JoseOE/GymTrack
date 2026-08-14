@@ -1,4 +1,4 @@
-import { SplashScreen, Stack } from 'expo-router';
+import { router, SplashScreen, Stack, usePathname } from 'expo-router';
 import { SQLiteProvider } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -21,9 +21,14 @@ export default function RootLayout() {
 function RootNavigator() {
   const auth = useAuth();
   const local = useGymTrack();
-  const initialLocalResolving = auth.isAuthenticated && !local.localReady && !local.error && !local.legacyMigrationRequired;
-  const resolving = auth.loading || initialLocalResolving;
+  const pathname = usePathname();
+  const recoveryActive = pathname === '/reset-password' || auth.passwordRecovery || (auth.authDeepLink.purpose === 'recovery' && auth.authDeepLink.status === 'processing');
+  const initialLocalResolving = auth.isAuthenticated && !recoveryActive && !local.localReady && !local.error && !local.legacyMigrationRequired;
+  const resolving = !recoveryActive && (auth.loading || initialLocalResolving);
   useEffect(() => { if (!resolving) void SplashScreen.hideAsync(); }, [resolving]);
+  useEffect(() => {
+    if (auth.passwordRecovery && pathname !== '/reset-password') router.replace('/reset-password');
+  }, [auth.passwordRecovery, pathname]);
   if (resolving) return <View style={styles.loading}><ActivityIndicator color={colors.primary} size="large" /><Text style={styles.loadingText}>Preparando GymTrack…</Text></View>;
 
   const destination = getPostAuthDestination({

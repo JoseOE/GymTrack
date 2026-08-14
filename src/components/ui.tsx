@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import type { ComponentProps, PropsWithChildren, ReactNode } from 'react';
+import type { ComponentProps, PropsWithChildren, ReactNode, RefObject } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -7,10 +7,10 @@ import { colors, radii, spacing, typography } from '@/constants/theme';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 
-export function Screen({ children }: PropsWithChildren) {
+export function Screen({ children, scrollViewRef }: PropsWithChildren<{ scrollViewRef?: RefObject<ScrollView | null> }>) {
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.screen} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.screen} ref={scrollViewRef} showsVerticalScrollIndicator={false}>
         {children}
       </ScrollView>
     </SafeAreaView>

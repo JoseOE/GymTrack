@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type RefObject } from 'react';
 import { Text, TextInput, View } from 'react-native';
 
 import { Card, Chip, PrimaryButton, SecondaryButton, SectionTitle } from '@/components/ui';
@@ -17,26 +17,39 @@ type Props = {
   onUpdate: (id: string, input: { name: string; category?: string; notes?: string }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onToggleExercise: (item: CustomEquipment, exerciseId: string) => Promise<void>;
+  adding: boolean;
+  nameInputRef: RefObject<TextInput | null>;
+  onAddingChange: (adding: boolean) => void;
 };
 
 export function CustomEquipmentSection(props: Props) {
   const { showToast } = useFeedback();
-  const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
   const [notes, setNotes] = useState('');
+  useEffect(() => {
+    if (!props.adding) return;
+    const frame = requestAnimationFrame(() => props.nameInputRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [props.adding, props.nameInputRef]);
+  const closeForm = () => {
+    setName('');
+    setCategory('');
+    setNotes('');
+    props.onAddingChange(false);
+  };
   const submit = async () => {
     try {
       await props.onCreate({ name, category, notes });
-      setName(''); setCategory(''); setNotes(''); setAdding(false);
+      closeForm();
       showToast({ type: 'success', title: 'Máquina agregada', message: 'Ahora puedes relacionarla con ejercicios oficiales.' });
     } catch (reason) { showToast({ type: 'error', title: 'No se pudo agregar', message: reason instanceof Error ? reason.message : 'Inténtalo nuevamente.' }); }
   };
-  return <View style={styles.section}><SectionTitle detail="LOCAL Y PRIVADO">Equipo personalizado</SectionTitle><Card style={styles.card}><Text style={styles.title}>¿No encuentras tu máquina?</Text><Text style={styles.body}>Agrégala manualmente y vincúlala con ejercicios del catálogo oficial.</Text>{adding ? <CustomForm name={name} category={category} notes={notes} saving={props.workingId === 'custom-create'} onName={setName} onCategory={setCategory} onNotes={setNotes} onCancel={() => setAdding(false)} onSave={() => void submit()} /> : <SecondaryButton title="Agregar equipo manualmente" icon="add-circle-outline" onPress={() => setAdding(true)} />}</Card>{props.items.map((item) => <CustomEquipmentCard key={item.id} item={item} {...props} />)}</View>;
+  return <View style={styles.section}><SectionTitle detail="LOCAL Y PRIVADO">Equipo personalizado</SectionTitle><Card style={styles.card}><Text style={styles.title}>¿No encuentras tu máquina?</Text><Text style={styles.body}>Agrégala manualmente y vincúlala con ejercicios del catálogo oficial.</Text>{props.adding ? <CustomForm name={name} category={category} notes={notes} nameInputRef={props.nameInputRef} saving={props.workingId === 'custom-create'} onName={setName} onCategory={setCategory} onNotes={setNotes} onCancel={closeForm} onSave={() => void submit()} /> : <SecondaryButton title="Agregar equipo manualmente" icon="add-circle-outline" onPress={() => props.onAddingChange(true)} />}</Card>{props.items.map((item) => <CustomEquipmentCard key={item.id} item={item} {...props} />)}</View>;
 }
 
-function CustomForm({ name, category, notes, saving, onName, onCategory, onNotes, onCancel, onSave }: { name: string; category: string; notes: string; saving: boolean; onName: (value: string) => void; onCategory: (value: string) => void; onNotes: (value: string) => void; onCancel: () => void; onSave: () => void }) {
-  return <View style={styles.section}><TextInput accessibilityLabel="Nombre de la máquina" autoCapitalize="sentences" onChangeText={onName} placeholder="Nombre *" placeholderTextColor={colors.textSubtle} style={styles.input} value={name} /><TextInput accessibilityLabel="Categoría de la máquina" autoCapitalize="words" onChangeText={onCategory} placeholder="Categoría" placeholderTextColor={colors.textSubtle} style={styles.input} value={category} /><TextInput accessibilityLabel="Notas de la máquina" multiline onChangeText={onNotes} placeholder="Notas" placeholderTextColor={colors.textSubtle} style={[styles.input, styles.multiline]} value={notes} /><View style={styles.row}><View style={styles.flex}><SecondaryButton title="Cancelar" onPress={onCancel} /></View><View style={styles.flex}><PrimaryButton title="Guardar" icon="save-outline" loading={saving} disabled={!name.trim()} onPress={onSave} /></View></View></View>;
+function CustomForm({ name, category, notes, nameInputRef, saving, onName, onCategory, onNotes, onCancel, onSave }: { name: string; category: string; notes: string; nameInputRef?: RefObject<TextInput | null>; saving: boolean; onName: (value: string) => void; onCategory: (value: string) => void; onNotes: (value: string) => void; onCancel: () => void; onSave: () => void }) {
+  return <View style={styles.section}><TextInput accessibilityLabel="Nombre de la máquina" autoCapitalize="sentences" onChangeText={onName} placeholder="Nombre *" placeholderTextColor={colors.textSubtle} ref={nameInputRef} style={styles.input} value={name} /><TextInput accessibilityLabel="Categoría de la máquina" autoCapitalize="words" onChangeText={onCategory} placeholder="Categoría" placeholderTextColor={colors.textSubtle} style={styles.input} value={category} /><TextInput accessibilityLabel="Notas de la máquina" multiline onChangeText={onNotes} placeholder="Notas" placeholderTextColor={colors.textSubtle} style={[styles.input, styles.multiline]} value={notes} /><View style={styles.row}><View style={styles.flex}><SecondaryButton title="Cancelar" onPress={onCancel} /></View><View style={styles.flex}><PrimaryButton title="Guardar" icon="save-outline" loading={saving} disabled={!name.trim()} onPress={onSave} /></View></View></View>;
 }
 
 function CustomEquipmentCard({ item, exercises, workingId, onUpdate, onDelete, onToggleExercise }: Props & { item: CustomEquipment }) {

@@ -25,7 +25,6 @@ export function useEquipmentInventory() {
   const [customEquipment, setCustomEquipment] = useState<CustomEquipment[]>([]);
   const [exerciseCatalog, setExerciseCatalog] = useState<EquipmentExerciseSummary[]>([]);
   const [query, setQuery] = useState('');
-  const [category, setCategory] = useState('Todos');
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState<string | null>(null);
   const inventoryRequestId = useRef(0);
@@ -50,14 +49,14 @@ export function useEquipmentInventory() {
     const requestId = ++inventoryRequestId.current;
     const ownerId = requireUser();
     const [nextEquipment, nextCustom] = await Promise.all([
-      listEquipmentCatalog(db, ownerId, targetLocationId, { query, category }),
+      listEquipmentCatalog(db, ownerId, targetLocationId, { query }),
       listCustomEquipment(db, ownerId, targetLocationId),
     ]);
     if (requestId === inventoryRequestId.current) {
       setEquipment(nextEquipment);
       setCustomEquipment(nextCustom);
     }
-  }, [category, db, query, requireUser]);
+  }, [db, query, requireUser]);
 
   const refresh = useCallback(async (preferredLocationId?: string) => {
     setLoading(true);
@@ -84,7 +83,7 @@ export function useEquipmentInventory() {
     if (!locationId || !userId) return;
     const timer = setTimeout(() => { void loadInventory(locationId); }, 120);
     return () => clearTimeout(timer);
-  }, [category, loadInventory, locationId, query, userId]);
+  }, [loadInventory, locationId, query, userId]);
 
   const run = useCallback(async (key: string, action: () => Promise<void>, preferredLocationId?: string) => {
     setWorkingId(key);
@@ -101,8 +100,6 @@ export function useEquipmentInventory() {
     () => locations.find((item) => item.id === locationId) ?? locations.find((item) => item.isActive) ?? null,
     [locationId, locations],
   );
-  const categories = ['Todos', 'General', 'Pecho', 'Espalda', 'Hombro', 'Pierna', 'Brazos', 'Abdomen', 'Core', 'Cardio'];
-
   return {
     locations,
     activeLocation,
@@ -111,11 +108,8 @@ export function useEquipmentInventory() {
     unavailableEquipment: equipment.filter((item) => !item.enabled),
     customEquipment,
     exerciseCatalog,
-    categories,
     query,
     setQuery,
-    category,
-    setCategory,
     loading,
     workingId,
     refresh,

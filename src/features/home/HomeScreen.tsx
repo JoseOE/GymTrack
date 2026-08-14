@@ -1,26 +1,59 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { Card, IconButton, Metric, PrimaryButton, ProgressBar, Screen, ScreenHeader, SectionTitle } from '@/components/ui';
+import { getScheduleForDate } from '@/constants/workoutSchedule';
 import { colors, radii, spacing, typography } from '@/constants/theme';
+import { useFeedback } from '@/providers/FeedbackProvider';
 import { useGymTrack } from '@/providers/GymTrackProvider';
 
 const dayOrder = [1, 2, 3, 4, 5, 6, 0];
 
 export function HomeScreen() {
-  const { activeWorkout, beginWorkout, loading, profile, weeklyProgress } = useGymTrack();
+  const { activeWorkout, beginWorkout, loading, pendingRoutine, profile, todayCompletedWorkout, weeklyProgress } = useGymTrack();
+  const { showToast } = useFeedback();
   const [starting, setStarting] = useState(false);
-  const [renderedAt] = useState(() => Date.now());
-  const today = new Intl.DateTimeFormat('es-MX', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
-  const handleWorkout = async () => {
-    if (activeWorkout) { router.push('/workout'); return; }
-    setStarting(true);
-    try { await beginWorkout(); router.push('/workout'); } catch (reason) { Alert.alert('No se pudo iniciar', reason instanceof Error ? reason.message : 'Inténtalo nuevamente.'); } finally { setStarting(false); }
-  };
+  const now = new Date();
+  const schedule = getScheduleForDate(now);
+  const today = new Intl.DateTimeFormat('es-MX', { weekday: 'long', day: 'numeric', month: 'long' }).format(now);
   const percentage = (weeklyProgress.completed / weeklyProgress.target) * 100;
-  return <Screen><ScreenHeader title="GymTrack" subtitle={`${profile?.displayName ? `Hola, ${profile.displayName} · ` : ''}${today}`} action={<IconButton icon="person-outline" label="Abrir perfil y configuración" onPress={() => router.push('/profile')} />} /><Card style={styles.hero}><View style={styles.eyebrow}><View style={styles.dot} /><Text style={styles.eyebrowText}>{activeWorkout ? 'SESIÓN ACTIVA' : 'ENTRENAMIENTO SUGERIDO · DEMO'}</Text></View><Text style={styles.workout}>{activeWorkout?.routineName ?? (activeWorkout ? 'Sesión libre' : 'Pierna completa')}</Text><Text style={styles.description}>{activeWorkout ? 'Guardado automáticamente en este dispositivo' : 'Plan visual de Fase 1A'}</Text><View style={styles.metrics}><Metric icon="time-outline" label="Duración" value={activeWorkout ? `${Math.max(1, Math.round((renderedAt - new Date(activeWorkout.startedAt).getTime()) / 60000))} min` : `${profile?.defaultWorkoutMinutes ?? 60} min`} /><View style={styles.divider} /><Metric icon="barbell-outline" label="Ejercicios" value={String(activeWorkout?.exercises.length ?? 6)} /></View><PrimaryButton loading={loading || starting} title={activeWorkout ? 'Continuar entrenamiento' : 'Iniciar entrenamiento'} onPress={() => void handleWorkout()} /></Card><View style={styles.section}><SectionTitle detail={`${weeklyProgress.completed} de ${weeklyProgress.target} sesiones reales`}>Progreso semanal</SectionTitle><Card><View style={styles.progressCopy}><Text style={styles.progressValue}>{Math.round(percentage)}%</Text><Text style={styles.progressHint}>{weeklyProgress.completed ? 'Cada marca viene de tu historial local.' : 'Completa una sesión para comenzar.'}</Text></View><ProgressBar value={percentage} /><View style={styles.days}>{['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((day, index) => { const completed = weeklyProgress.completedDays.includes(dayOrder[index]); return <View key={day} style={styles.day}><View style={[styles.dayCircle, completed && styles.dayComplete]}>{completed ? <Ionicons color={colors.background} name="checkmark" size={15} /> : null}</View><Text style={styles.dayLabel}>{day}</Text></View>; })}</View></Card></View></Screen>;
+  const plannedName = pendingRoutine && !schedule.isRest ? pendingRoutine.name : schedule.workoutName;
+  const plannedMinutes = pendingRoutine && !schedule.isRest ? pendingRoutine.estimatedMinutes : schedule.estimatedMinutes;
+  const plannedExercises = pendingRoutine && !schedule.isRest ? pendingRoutine.exerciseCount : schedule.muscles.length;
+
+  const handleWorkout = async () => {
+    if (activeWorkout || todayCompletedWorkout) { router.push('/workout'); return; }
+    if (schedule.isRest) { router.push('/calendar'); return; }
+    setStarting(true);
+    try { await beginWorkout(); router.push('/workout'); }
+    catch (reason) { showToast({ type: 'error', title: 'No se pudo iniciar', message: reason instanceof Error ? reason.message : 'Inténtalo nuevamente.' }); }
+    finally { setStarting(false); }
+  };
+
+  const heroName = activeWorkout?.sessionName ?? (todayCompletedWorkout ? 'Entrenamiento completado' : plannedName);
+  const eyebrow = activeWorkout ? 'SESIÓN ACTIVA' : todayCompletedWorkout ? 'OBJETIVO DE HOY COMPLETADO' : schedule.isRest ? 'PLAN DE HOY' : pendingRoutine ? 'RUTINA ACEPTADA' : schedule.isOptional ? 'CARDIO OPCIONAL' : 'ENTRENAMIENTO DE HOY';
+  const description = activeWorkout ? 'Guardado automáticamente en este dispositivo' : todayCompletedWorkout ? todayCompletedWorkout.title : schedule.isRest ? 'Recuperación y descanso' : pendingRoutine ? 'Guardada desde Coach' : `${schedule.dayName} · Plan semanal`;
+  const primaryTitle = activeWorkout ? 'Continuar entrenamiento' : todayCompletedWorkout ? 'Ver resumen de hoy' : schedule.isRest ? 'Ver plan semanal' : schedule.isOptional ? 'Iniciar cardio opcional' : 'Iniciar entrenamiento';
+  const primaryIcon = schedule.isRest && !activeWorkout && !todayCompletedWorkout ? 'calendar-outline' : todayCompletedWorkout ? 'checkmark-circle-outline' : 'play';
+
+  return (
+    <Screen>
+      <ScreenHeader title="GymTrack" subtitle={`${profile?.displayName ? `Hola, ${profile.displayName} · ` : ''}${today}`} action={<IconButton icon="person-outline" label="Abrir perfil y configuración" onPress={() => router.push('/profile')} />} />
+      <Card style={styles.hero}>
+        <View style={styles.eyebrow}><View style={styles.dot} /><Text style={styles.eyebrowText}>{eyebrow}</Text></View>
+        <Text style={styles.workout}>{heroName}</Text><Text style={styles.description}>{description}</Text>
+        <View style={styles.metrics}>
+          <Metric icon="time-outline" label={activeWorkout ? 'Estado' : 'Duración'} value={activeWorkout ? 'En curso' : todayCompletedWorkout ? `${todayCompletedWorkout.durationMinutes} min` : plannedMinutes ? `${plannedMinutes} min` : 'Descanso'} />
+          <View style={styles.divider} />
+          <Metric icon="barbell-outline" label="Ejercicios" value={String(activeWorkout?.exercises.length ?? todayCompletedWorkout?.exerciseCount ?? plannedExercises)} />
+        </View>
+        <PrimaryButton icon={primaryIcon} loading={loading || starting} title={primaryTitle} onPress={() => void handleWorkout()} />
+      </Card>
+      <View style={styles.section}><SectionTitle detail={`${weeklyProgress.completed} de ${weeklyProgress.target} sesiones reales`}>Progreso semanal</SectionTitle><Card><View style={styles.progressCopy}><Text style={styles.progressValue}>{Math.round(percentage)}%</Text><Text style={styles.progressHint}>{weeklyProgress.completed ? 'Cada marca viene de tu historial local.' : 'Completa una sesión para comenzar.'}</Text></View><ProgressBar value={percentage} /><View style={styles.days}>{['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((day, index) => { const completed = weeklyProgress.completedDays.includes(dayOrder[index]); return <View key={day} style={styles.day}><View style={[styles.dayCircle, completed && styles.dayComplete]}>{completed ? <Ionicons color={colors.background} name="checkmark" size={15} /> : null}</View><Text style={styles.dayLabel}>{day}</Text></View>; })}</View></Card></View>
+    </Screen>
+  );
 }
 
 const styles = StyleSheet.create({ hero: { gap: spacing.lg }, eyebrow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, dot: { width: 7, height: 7, borderRadius: radii.pill, backgroundColor: colors.primary }, eyebrowText: { ...typography.label, color: colors.primary, letterSpacing: 0.8 }, workout: { ...typography.title, color: colors.text }, description: { ...typography.body, color: colors.textMuted, marginTop: -spacing.sm }, metrics: { flexDirection: 'row', marginVertical: spacing.sm }, divider: { width: 1, backgroundColor: colors.border, marginHorizontal: spacing.xl }, section: { gap: spacing.md }, progressCopy: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.md, marginBottom: spacing.md }, progressValue: { ...typography.title, color: colors.text }, progressHint: { ...typography.caption, color: colors.textMuted, flex: 1 }, days: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.xl }, day: { alignItems: 'center', gap: spacing.sm }, dayCircle: { width: 28, height: 28, borderRadius: radii.pill, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }, dayComplete: { backgroundColor: colors.primary, borderColor: colors.primary }, dayLabel: { ...typography.label, color: colors.textMuted } });

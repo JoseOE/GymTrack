@@ -1,10 +1,11 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { Chip, IconButton, PrimaryButton, Screen, ScreenHeader, SectionTitle } from '@/components/ui';
 import { colors, radii, spacing, typography } from '@/constants/theme';
 import type { ExperienceLevel, Goal, UserProfile } from '@/domain/models';
+import { useFeedback } from '@/providers/FeedbackProvider';
 import { useGymTrack } from '@/providers/GymTrackProvider';
 
 const goals: Goal[] = ['Ganar músculo', 'Ganar fuerza', 'Perder grasa', 'Mejorar salud'];
@@ -18,6 +19,7 @@ export function ProfileScreen() {
 }
 
 function ProfileForm({ profile, updateProfile }: { profile: UserProfile; updateProfile: (profile: UserProfile) => Promise<void> }) {
+  const { showToast } = useFeedback();
   const [name, setName] = useState(profile.displayName);
   const [height, setHeight] = useState(String(profile.heightCm));
   const [weight, setWeight] = useState(String(profile.weightKg));
@@ -28,9 +30,9 @@ function ProfileForm({ profile, updateProfile }: { profile: UserProfile; updateP
   const handleSave = async () => {
     const heightCm = Number(height.replace(',', '.'));
     const weightKg = Number(weight.replace(',', '.'));
-    if (!name.trim() || !Number.isFinite(heightCm) || heightCm <= 0 || !Number.isFinite(weightKg) || weightKg <= 0) { Alert.alert('Revisa tus datos', 'Nombre, estatura y peso deben tener valores válidos.'); return; }
+    if (!name.trim() || !Number.isFinite(heightCm) || heightCm <= 0 || !Number.isFinite(weightKg) || weightKg <= 0) { showToast({ type: 'warning', title: 'Revisa tus datos', message: 'Nombre, estatura y peso deben tener valores válidos.' }); return; }
     setSaving(true);
-    try { await updateProfile({ ...profile, displayName: name.trim(), heightCm, weightKg, goal, experienceLevel: level, defaultWorkoutMinutes: duration }); Alert.alert('Perfil guardado', 'Tus preferencias quedaron guardadas en este dispositivo.'); } catch (reason) { Alert.alert('No se pudo guardar', reason instanceof Error ? reason.message : 'Inténtalo nuevamente.'); } finally { setSaving(false); }
+    try { await updateProfile({ ...profile, displayName: name.trim(), heightCm, weightKg, goal, experienceLevel: level, defaultWorkoutMinutes: duration }); showToast({ type: 'success', title: 'Perfil guardado', message: 'Tus preferencias quedaron guardadas en este dispositivo.' }); } catch (reason) { showToast({ type: 'error', title: 'No se pudo guardar', message: reason instanceof Error ? reason.message : 'Inténtalo nuevamente.' }); } finally { setSaving(false); }
   };
   return <Screen><ScreenHeader title="Perfil" subtitle="Configuración local" action={<IconButton icon="close" label="Cerrar perfil" onPress={() => router.back()} />} /><View style={styles.field}><Text style={styles.label}>Nombre</Text><TextInput autoCapitalize="words" onChangeText={setName} placeholder="Tu nombre" placeholderTextColor={colors.textSubtle} style={styles.input} value={name} /></View><View style={styles.row}><View style={styles.flex}><Text style={styles.label}>Estatura (cm)</Text><TextInput keyboardType="decimal-pad" onChangeText={setHeight} style={styles.input} value={height} /></View><View style={styles.flex}><Text style={styles.label}>Peso (kg)</Text><TextInput keyboardType="decimal-pad" onChangeText={setWeight} style={styles.input} value={weight} /></View></View><Choice title="Objetivo" options={goals} value={goal} onChange={(value) => setGoal(value as Goal)} /><Choice title="Nivel" options={levels} value={level} onChange={(value) => setLevel(value as ExperienceLevel)} /><View style={styles.field}><SectionTitle>Duración habitual</SectionTitle><View style={styles.chips}>{durations.map((item) => <Chip key={item} label={`${item} min`} selected={duration === item} onPress={() => setDuration(item)} />)}</View></View><PrimaryButton icon="save-outline" loading={saving} title="Guardar cambios" onPress={() => void handleSave()} /><Text style={styles.security}>Solo se guarda tu perfil de gimnasio. No se almacenan contraseñas ni credenciales.</Text></Screen>;
 }

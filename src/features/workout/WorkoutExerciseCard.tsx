@@ -4,21 +4,21 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { Card, SecondaryButton } from '@/components/ui';
 import { colors, radii, spacing, typography } from '@/constants/theme';
-import type { WorkoutExercise, WorkoutSet } from '@/domain/models';
+import type { RemoveWorkoutSetResult, WorkoutExercise, WorkoutSet } from '@/domain/models';
 
 type Props = {
   exercise: WorkoutExercise;
   index: number;
   onUpdateSet: (set: WorkoutSet) => Promise<void>;
   onAddSet: () => Promise<void>;
-  onRemoveSet: (setId: string) => Promise<boolean>;
+  onRemoveSet: (setId: string) => Promise<RemoveWorkoutSetResult>;
 };
 
 export function WorkoutExerciseCard({ exercise, index, onUpdateSet, onAddSet, onRemoveSet }: Props) {
   return <Card style={styles.card}><View style={styles.header}><View style={styles.number}><Text style={styles.numberText}>{index + 1}</Text></View><View style={styles.copy}><Text style={styles.name}>{exercise.name}</Text><Text style={styles.muscle}>{exercise.muscle} · {exercise.sets.length} series</Text></View></View><View style={styles.tableHeader}><Text style={[styles.columnLabel, styles.setColumn]}>SERIE</Text><Text style={styles.columnLabel}>KG</Text><Text style={styles.columnLabel}>REPS</Text><Text style={styles.actionColumn}>✓</Text><Text style={styles.deleteColumn}>—</Text></View>{exercise.sets.map((set) => <SetRow key={set.id} set={set} onRemove={() => onRemoveSet(set.id)} onUpdate={onUpdateSet} />)}<SecondaryButton icon="add" title="Agregar serie" onPress={() => void onAddSet()} /></Card>;
 }
 
-function SetRow({ set, onUpdate, onRemove }: { set: WorkoutSet; onUpdate: (set: WorkoutSet) => Promise<void>; onRemove: () => Promise<boolean> }) {
+function SetRow({ set, onUpdate, onRemove }: { set: WorkoutSet; onUpdate: (set: WorkoutSet) => Promise<void>; onRemove: () => Promise<RemoveWorkoutSetResult> }) {
   const [weight, setWeight] = useState(String(set.weightKg));
   const [reps, setReps] = useState(String(set.repetitions));
   const persistNumbers = () => void onUpdate({ ...set, weightKg: Math.max(0, Number(weight.replace(',', '.')) || 0), repetitions: Math.max(0, Math.round(Number(reps) || 0)) });

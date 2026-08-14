@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
+import { ensureDefaultTrainingLocation } from '@/database/repositories/equipmentRepository';
 import { ensureProfile, getProfile, saveProfile } from '@/database/repositories/profileRepository';
 import { ensureActiveWeeklyPlan } from '@/database/repositories/weeklyPlanRepository';
 import type { OnboardingProfileInput } from '@/domain/models';
@@ -17,6 +18,7 @@ export async function getLegacyDataStatus(db: SQLiteDatabase, userId: string) {
 export async function ensureUserWorkspace(db: SQLiteDatabase, userId: string, displayName: string) {
   const profile = await ensureProfile(db, userId, displayName);
   await ensureActiveWeeklyPlan(db, userId);
+  await ensureDefaultTrainingLocation(db, userId);
   return profile;
 }
 
@@ -38,6 +40,7 @@ export async function linkLegacyData(db: SQLiteDatabase, userId: string, fallbac
     await transaction.runAsync('UPDATE weekly_plan SET user_profile_id = ? WHERE user_profile_id = ?', userId, 'local-user');
     await transaction.runAsync('UPDATE routine SET owner_user_id = ? WHERE owner_user_id = ?', userId, 'local-user');
     await transaction.runAsync('UPDATE workout_session SET owner_user_id = ? WHERE owner_user_id = ?', userId, 'local-user');
+    await transaction.runAsync('UPDATE training_location SET owner_user_id = ? WHERE owner_user_id = ?', userId, 'local-user');
     await transaction.runAsync(
       `UPDATE local_data_migration SET status = 'linked', resolved_user_id = ?, resolved_at = ? WHERE id = 1`,
       userId,
@@ -46,6 +49,7 @@ export async function linkLegacyData(db: SQLiteDatabase, userId: string, fallbac
   });
   const profile = await getProfile(db, userId).catch(() => ensureProfile(db, userId, fallbackDisplayName));
   await ensureActiveWeeklyPlan(db, userId);
+  await ensureDefaultTrainingLocation(db, userId);
   return profile;
 }
 

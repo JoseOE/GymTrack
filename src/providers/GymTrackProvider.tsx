@@ -2,6 +2,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { listMuscleGroups } from '@/database/repositories/catalogRepository';
+import { listTrainingLocations } from '@/database/repositories/equipmentRepository';
 import {
   archiveLegacyAndStartFresh, ensureUserWorkspace, getLegacyDataStatus, linkLegacyData,
   saveOnboardingProfile,
@@ -15,7 +16,7 @@ import {
 } from '@/database/repositories/workoutRepository';
 import type {
   ActiveWorkout, MuscleGroup, OnboardingProfileInput, PendingRoutineSummary, RecentWorkout, RemoveWorkoutSetResult,
-  RoutinePreview, UserProfile, WeeklyPlan, WeeklyPlanDraft, WeeklyProgress, WorkoutSet,
+  RoutinePreview, TrainingLocation, UserProfile, WeeklyPlan, WeeklyPlanDraft, WeeklyProgress, WorkoutSet,
 } from '@/domain/models';
 import { useAuth } from '@/providers/AuthProvider';
 import { generateRoutinePreview, type RoutineRequest, saveRoutine } from '@/services/gymTrackService';
@@ -33,6 +34,8 @@ type GymTrackContextValue = {
   profile: UserProfile | null;
   weeklyPlan: WeeklyPlan | null;
   muscleGroups: MuscleGroup[];
+  trainingLocations: TrainingLocation[];
+  activeTrainingLocation: TrainingLocation | null;
   activeWorkout: ActiveWorkout | null;
   todayCompletedWorkout: RecentWorkout | null;
   pendingRoutine: PendingRoutineSummary | null;
@@ -98,6 +101,7 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan | null>(null);
   const [muscleGroups, setMuscleGroups] = useState<MuscleGroup[]>([]);
+  const [trainingLocations, setTrainingLocations] = useState<TrainingLocation[]>([]);
   const [activeWorkout, setActiveWorkout] = useState<ActiveWorkout | null>(null);
   const [pendingRoutine, setPendingRoutine] = useState<PendingRoutineSummary | null>(null);
   const [recentWorkouts, setRecentWorkouts] = useState<RecentWorkout[]>([]);
@@ -116,6 +120,7 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
     setLoadedUserId(null);
     setProfile(null);
     setWeeklyPlan(null);
+    setTrainingLocations([]);
     setActiveWorkout(null);
     setPendingRoutine(null);
     setRecentWorkouts([]);
@@ -152,15 +157,16 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
       }
       setLegacyMigrationRequired(false);
       const nextProfile = await ensureUserWorkspace(db, authenticatedUserId, accountDisplayNameRef.current);
-      const [nextPlan, nextMuscles, nextActive, nextPending, nextRecent, nextDates, nextSnapshots] = await Promise.all([
-        ensureActiveWeeklyPlan(db, authenticatedUserId), listMuscleGroups(db), getActiveWorkout(db, authenticatedUserId),
-        getPendingRoutineSummary(db, authenticatedUserId), listRecentWorkouts(db, authenticatedUserId), listCompletedDates(db, authenticatedUserId, historyStartIso()),
+      const [nextPlan, nextMuscles, nextLocations, nextActive, nextPending, nextRecent, nextDates, nextSnapshots] = await Promise.all([
+        ensureActiveWeeklyPlan(db, authenticatedUserId), listMuscleGroups(db), listTrainingLocations(db, authenticatedUserId),
+        getActiveWorkout(db, authenticatedUserId), getPendingRoutineSummary(db, authenticatedUserId), listRecentWorkouts(db, authenticatedUserId), listCompletedDates(db, authenticatedUserId, historyStartIso()),
         listCompletedSessionSnapshots(db, authenticatedUserId, historyStartIso()),
       ]);
       if (requestId !== refreshId.current) return;
       setProfile(nextProfile);
       setWeeklyPlan(nextPlan);
       setMuscleGroups(nextMuscles);
+      setTrainingLocations(nextLocations);
       setActiveWorkout(nextActive);
       setPendingRoutine(nextPending);
       setRecentWorkouts(nextRecent);
@@ -218,6 +224,8 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
     profile,
     weeklyPlan,
     muscleGroups,
+    trainingLocations,
+    activeTrainingLocation: trainingLocations.find((location) => location.isActive) ?? null,
     activeWorkout,
     todayCompletedWorkout,
     pendingRoutine,
@@ -298,7 +306,7 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
     },
     completeWorkout: async (sessionId) => { await finishWorkout(db, requireUserId(), sessionId); await refresh(); },
     cancelActiveWorkout: async (sessionId) => { await cancelWorkout(db, requireUserId(), sessionId); await refresh(); },
-    previewRoutine: (request) => generateRoutinePreview(db, request),
+    previewRoutine: (request) => generateRoutinePreview(db, requireUserId(), request),
     acceptRoutine: async (preview) => {
       const userId = requireUserId();
       const routineId = await saveRoutine(db, userId, preview);

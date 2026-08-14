@@ -30,15 +30,16 @@ type ActiveExerciseRow = {
 
 type RoutineExerciseRow = { exercise_id: string; order_index: number; target_sets: number };
 
-export async function getActiveWorkout(db: SQLiteDatabase): Promise<ActiveWorkout | null> {
+export async function getActiveWorkout(db: SQLiteDatabase, ownerUserId: string): Promise<ActiveWorkout | null> {
   const header = await db.getFirstAsync<ActiveHeaderRow>(
     `SELECT ws.id AS session_id, ws.routine_id, r.name AS routine_name, ws.display_name, ws.started_at,
       ws.scheduled_day_index, ws.counts_toward_goal
      FROM workout_session ws
      LEFT JOIN routine r ON r.id = ws.routine_id
-     WHERE ws.status = 'active'
+     WHERE ws.status = 'active' AND ws.owner_user_id = ?
      ORDER BY ws.started_at DESC, ws.id DESC
      LIMIT 1`,
+    ownerUserId,
   );
   if (!header) return null;
 
@@ -111,14 +112,16 @@ async function getScheduleExercises(db: SQLiteDatabase, day: WeeklyPlanDay) {
   return selected.map((exercise, orderIndex) => ({ exercise_id: exercise.id, order_index: orderIndex, target_sets: exercise.exerciseType === 'cardio' ? 1 : 3 }));
 }
 
-export async function startWorkout(db: SQLiteDatabase, day: WeeklyPlanDay, isAdditional = false) {
-  const active = await getActiveWorkout(db);
+export async function startWorkout(db: SQLiteDatabase, ownerUserId: string, day: WeeklyPlanDay, isAdditional = false) {
+  const active = await getActiveWorkout(db, ownerUserId);
   if (active) return active;
 
   const routine = await db.getFirstAsync<{ id: string; name: string }>(
     `SELECT r.id, r.name FROM routine r
-     WHERE NOT EXISTS (SELECT 1 FROM workout_session ws WHERE ws.routine_id = r.id)
+     WHERE r.owner_user_id = ?
+       AND NOT EXISTS (SELECT 1 FROM workout_session ws WHERE ws.routine_id = r.id)
      ORDER BY r.updated_at DESC LIMIT 1`,
+    ownerUserId,
   );
   let exercises: RoutineExerciseRow[];
   if (routine) {
@@ -137,8 +140,8 @@ export async function startWorkout(db: SQLiteDatabase, day: WeeklyPlanDay, isAdd
   await db.withExclusiveTransactionAsync(async (transaction) => {
     await transaction.runAsync(
       `INSERT INTO workout_session
-        (id, routine_id, display_name, started_at, status, scheduled_day_index, counts_toward_goal)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        (id, routine_id, display_name, started_at, status, scheduled_day_index, counts_toward_goal, owner_user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       sessionId,
       routine?.id ?? null,
       isAdditional ? `${sessionName} · Adicional` : sessionName,
@@ -146,6 +149,7 @@ export async function startWorkout(db: SQLiteDatabase, day: WeeklyPlanDay, isAdd
       'active',
       day.dayIndex,
       isAdditional ? 0 : day.countsTowardGoal ? 1 : 0,
+      ownerUserId,
     );
     for (const exercise of exercises) {
       const workoutExerciseId = createId('workout-exercise');
@@ -169,64 +173,94 @@ export async function startWorkout(db: SQLiteDatabase, day: WeeklyPlanDay, isAdd
       }
     }
   });
-  return getActiveWorkout(db);
+  return getActiveWorkout(db, ownerUserId);
 }
 
-export async function saveWorkoutSet(db: SQLiteDatabase, set: WorkoutSet) {
+export async function saveWorkoutSet(db: SQLiteDatabase, ownerUserId: string, set: WorkoutSet) {
   await db.runAsync(
-    'UPDATE workout_set SET weight_kg = ?, repetitions = ?, completed = ? WHERE id = ?',
+    `UPDATE workout_set SET weight_kg = ?, repetitions = ?, completed = ?
+     WHERE id = ? AND EXISTS (
+       SELECT 1 FROM workout_exercise exercise
+       JOIN workout_session session ON session.id = exercise.workout_session_id
+       WHERE exercise.id = workout_set.workout_exercise_id AND session.owner_user_id = ?
+     )`,
     set.weightKg,
     set.repetitions,
     set.completed ? 1 : 0,
     set.id,
+    ownerUserId,
   );
 }
 
-export async function addWorkoutSet(db: SQLiteDatabase, workoutExerciseId: string) {
-  const row = await db.getFirstAsync<{ next_number: number }>(
-    'SELECT COALESCE(MAX(set_number), 0) + 1 AS next_number FROM workout_set WHERE workout_exercise_id = ?',
+export async function addWorkoutSet(db: SQLiteDatabase, ownerUserId: string, workoutExerciseId: string) {
+  const row = await db.getFirstAsync<{ max_number: number | null }>(
+    `SELECT MAX(workout_set.set_number) AS max_number
+     FROM workout_set
+     JOIN workout_exercise exercise ON exercise.id = workout_set.workout_exercise_id
+     JOIN workout_session session ON session.id = exercise.workout_session_id
+     WHERE workout_set.workout_exercise_id = ? AND session.owner_user_id = ?`,
     workoutExerciseId,
+    ownerUserId,
   );
+  if (row?.max_number === null || row?.max_number === undefined) {
+    throw new Error('El ejercicio no pertenece al usuario activo.');
+  }
   await db.runAsync(
     `INSERT INTO workout_set (id, workout_exercise_id, set_number, weight_kg, repetitions, completed, created_at)
      VALUES (?, ?, ?, 0, 0, 0, ?)`,
     createId('set'),
     workoutExerciseId,
-    row?.next_number ?? 1,
+    row.max_number + 1,
     new Date().toISOString(),
   );
 }
 
-export async function deleteWorkoutSet(db: SQLiteDatabase, setId: string): Promise<RemoveWorkoutSetResult> {
+export async function deleteWorkoutSet(db: SQLiteDatabase, ownerUserId: string, setId: string): Promise<RemoveWorkoutSetResult> {
   const set = await db.getFirstAsync<{ completed: number; set_count: number }>(
     `SELECT target.completed,
       (SELECT COUNT(*) FROM workout_set siblings WHERE siblings.workout_exercise_id = target.workout_exercise_id) AS set_count
-     FROM workout_set target WHERE target.id = ?`,
+     FROM workout_set target
+     JOIN workout_exercise exercise ON exercise.id = target.workout_exercise_id
+     JOIN workout_session session ON session.id = exercise.workout_session_id
+     WHERE target.id = ? AND session.owner_user_id = ?`,
     setId,
+    ownerUserId,
   );
   if (!set) return 'not-found';
   if (set.completed === 1) return 'completed';
   if (set.set_count <= 1) return 'last-set';
-  const result = await db.runAsync('DELETE FROM workout_set WHERE id = ? AND completed = 0', setId);
+  const result = await db.runAsync(
+    `DELETE FROM workout_set WHERE id = ? AND completed = 0 AND EXISTS (
+      SELECT 1 FROM workout_exercise exercise
+      JOIN workout_session session ON session.id = exercise.workout_session_id
+      WHERE exercise.id = workout_set.workout_exercise_id AND session.owner_user_id = ?
+    )`,
+    setId,
+    ownerUserId,
+  );
   return result.changes > 0 ? 'removed' : 'not-found';
 }
 
-export async function finishWorkout(db: SQLiteDatabase, sessionId: string) {
+export async function finishWorkout(db: SQLiteDatabase, ownerUserId: string, sessionId: string) {
   await db.runAsync(
-    `UPDATE workout_session SET status = 'completed', completed_at = ? WHERE id = ? AND status = 'active'`,
+    `UPDATE workout_session SET status = 'completed', completed_at = ?
+     WHERE id = ? AND owner_user_id = ? AND status = 'active'`,
     new Date().toISOString(),
     sessionId,
+    ownerUserId,
   );
 }
 
-export async function cancelWorkout(db: SQLiteDatabase, sessionId: string) {
+export async function cancelWorkout(db: SQLiteDatabase, ownerUserId: string, sessionId: string) {
   await db.runAsync(
-    `UPDATE workout_session SET status = 'cancelled', completed_at = NULL WHERE id = ? AND status = 'active'`,
+    `UPDATE workout_session SET status = 'cancelled', completed_at = NULL
+     WHERE id = ? AND owner_user_id = ? AND status = 'active'`,
     sessionId,
+    ownerUserId,
   );
 }
 
-export async function listRecentWorkouts(db: SQLiteDatabase, limit = 8): Promise<RecentWorkout[]> {
+export async function listRecentWorkouts(db: SQLiteDatabase, ownerUserId: string, limit = 8): Promise<RecentWorkout[]> {
   const rows = await db.getAllAsync<{
     id: string; completed_at: string; title: string | null; duration_minutes: number;
     exercise_count: number; set_count: number;
@@ -242,29 +276,32 @@ export async function listRecentWorkouts(db: SQLiteDatabase, limit = 8): Promise
      JOIN exercise e ON e.id = we.exercise_id
      JOIN muscle_group mg ON mg.id = e.primary_muscle_id
      LEFT JOIN workout_set sets ON sets.workout_exercise_id = we.id
-     WHERE ws.status = 'completed' AND ws.completed_at IS NOT NULL
+     WHERE ws.owner_user_id = ? AND ws.status = 'completed' AND ws.completed_at IS NOT NULL
      GROUP BY ws.id
      ORDER BY ws.completed_at DESC
      LIMIT ?`,
+    ownerUserId,
     limit,
   );
   return rows.map((row) => ({ id: row.id, completedAt: row.completed_at, title: row.title ?? 'Entrenamiento libre', durationMinutes: row.duration_minutes, exerciseCount: row.exercise_count, setCount: row.set_count }));
 }
 
-export async function listCompletedDates(db: SQLiteDatabase, sinceIso: string) {
+export async function listCompletedDates(db: SQLiteDatabase, ownerUserId: string, sinceIso: string) {
   const rows = await db.getAllAsync<{ completed_at: string }>(
     `SELECT completed_at FROM workout_session
-     WHERE status = 'completed' AND completed_at IS NOT NULL AND completed_at >= ? ORDER BY completed_at`,
+     WHERE owner_user_id = ? AND status = 'completed' AND completed_at IS NOT NULL AND completed_at >= ? ORDER BY completed_at`,
+    ownerUserId,
     sinceIso,
   );
   return rows.map((row) => row.completed_at);
 }
 
-export async function listCompletedSessionSnapshots(db: SQLiteDatabase, sinceIso: string) {
+export async function listCompletedSessionSnapshots(db: SQLiteDatabase, ownerUserId: string, sinceIso: string) {
   return db.getAllAsync<{ completed_at: string; counts_toward_goal: number }>(
     `SELECT completed_at, counts_toward_goal FROM workout_session
-     WHERE status = 'completed' AND completed_at IS NOT NULL AND completed_at >= ?
+     WHERE owner_user_id = ? AND status = 'completed' AND completed_at IS NOT NULL AND completed_at >= ?
      ORDER BY completed_at`,
+    ownerUserId,
     sinceIso,
   );
 }

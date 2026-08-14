@@ -1,6 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import { ensureActiveWeeklyPlan } from '@/database/repositories/weeklyPlanRepository';
 import { equipmentSeeds, exerciseSeeds, muscleSeeds } from '@/database/seed/catalog';
 
 const SEED_KEY = 'catalog-v1';
@@ -77,21 +76,6 @@ export async function seedDatabase(db: SQLiteDatabase) {
     }
 
     const now = new Date().toISOString();
-    await transaction.runAsync(
-      `INSERT OR IGNORE INTO user_profile
-        (id, display_name, height_cm, weight_kg, goal, experience_level, default_workout_minutes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      'local-user',
-      'Atleta',
-      170,
-      70,
-      'Ganar músculo',
-      'Intermedio',
-      60,
-      now,
-      now,
-    );
     await transaction.runAsync('INSERT INTO _seed_state (key, applied_at) VALUES (?, ?)', SEED_KEY, now);
   });
-  await ensureActiveWeeklyPlan(db, 'local-user');
 }

@@ -3,20 +3,23 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import type { PendingRoutineSummary, RoutinePreview } from '@/domain/models';
 import { createId } from '@/utils/id';
 
-export async function saveRoutine(db: SQLiteDatabase, preview: RoutinePreview) {
+export async function saveRoutine(db: SQLiteDatabase, ownerUserId: string, preview: RoutinePreview) {
   const routineId = createId('routine');
   const now = new Date().toISOString();
   await db.withExclusiveTransactionAsync(async (transaction) => {
     await transaction.runAsync(
-      'DELETE FROM routine WHERE NOT EXISTS (SELECT 1 FROM workout_session ws WHERE ws.routine_id = routine.id)',
+      `DELETE FROM routine WHERE owner_user_id = ?
+       AND NOT EXISTS (SELECT 1 FROM workout_session ws WHERE ws.routine_id = routine.id)`,
+      ownerUserId,
     );
     await transaction.runAsync(
-      'INSERT INTO routine (id, name, estimated_minutes, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO routine (id, name, estimated_minutes, created_at, updated_at, owner_user_id) VALUES (?, ?, ?, ?, ?, ?)',
       routineId,
       preview.name,
       preview.estimatedMinutes,
       now,
       now,
+      ownerUserId,
     );
     for (const [index, exercise] of preview.exercises.entries()) {
       await transaction.runAsync(
@@ -33,15 +36,17 @@ export async function saveRoutine(db: SQLiteDatabase, preview: RoutinePreview) {
   return routineId;
 }
 
-export async function getPendingRoutineSummary(db: SQLiteDatabase): Promise<PendingRoutineSummary | null> {
+export async function getPendingRoutineSummary(db: SQLiteDatabase, ownerUserId: string): Promise<PendingRoutineSummary | null> {
   const row = await db.getFirstAsync<{ id: string; name: string; estimated_minutes: number; exercise_count: number }>(
     `SELECT r.id, r.name, r.estimated_minutes, COUNT(re.id) AS exercise_count
      FROM routine r
      JOIN routine_exercise re ON re.routine_id = r.id
-     WHERE NOT EXISTS (SELECT 1 FROM workout_session ws WHERE ws.routine_id = r.id)
+     WHERE r.owner_user_id = ?
+       AND NOT EXISTS (SELECT 1 FROM workout_session ws WHERE ws.routine_id = r.id)
      GROUP BY r.id
      ORDER BY r.updated_at DESC
      LIMIT 1`,
+    ownerUserId,
   );
   return row ? { id: row.id, name: row.name, estimatedMinutes: row.estimated_minutes, exerciseCount: row.exercise_count } : null;
 }

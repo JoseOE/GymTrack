@@ -1,8 +1,12 @@
 import { useSQLiteContext } from 'expo-sqlite';
-import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { listMuscleGroups } from '@/database/repositories/catalogRepository';
-import { getProfile, saveProfile as persistProfile } from '@/database/repositories/profileRepository';
+import {
+  archiveLegacyAndStartFresh, ensureUserWorkspace, getLegacyDataStatus, linkLegacyData,
+  saveOnboardingProfile,
+} from '@/database/repositories/localAccountRepository';
+import { saveProfile as persistProfile } from '@/database/repositories/profileRepository';
 import { getPendingRoutineSummary } from '@/database/repositories/routineRepository';
 import { ensureActiveWeeklyPlan, resetWeeklyPlanToDefault, saveWeeklyPlan } from '@/database/repositories/weeklyPlanRepository';
 import {
@@ -10,9 +14,10 @@ import {
   listCompletedSessionSnapshots, listRecentWorkouts, saveWorkoutSet, startWorkout,
 } from '@/database/repositories/workoutRepository';
 import type {
-  ActiveWorkout, MuscleGroup, PendingRoutineSummary, RecentWorkout, RemoveWorkoutSetResult, RoutinePreview,
-  UserProfile, WeeklyPlan, WeeklyPlanDraft, WeeklyProgress, WorkoutSet,
+  ActiveWorkout, MuscleGroup, OnboardingProfileInput, PendingRoutineSummary, RecentWorkout, RemoveWorkoutSetResult,
+  RoutinePreview, UserProfile, WeeklyPlan, WeeklyPlanDraft, WeeklyProgress, WorkoutSet,
 } from '@/domain/models';
+import { useAuth } from '@/providers/AuthProvider';
 import { generateRoutinePreview, type RoutineRequest, saveRoutine } from '@/services/gymTrackService';
 import { getPlanForDate, getWeeklyTarget } from '@/services/weeklyPlanService';
 
@@ -21,6 +26,8 @@ type CompletedSnapshot = { completed_at: string; counts_toward_goal: number };
 type GymTrackContextValue = {
   loading: boolean;
   error: string | null;
+  localReady: boolean;
+  legacyMigrationRequired: boolean;
   profile: UserProfile | null;
   weeklyPlan: WeeklyPlan | null;
   muscleGroups: MuscleGroup[];
@@ -31,6 +38,9 @@ type GymTrackContextValue = {
   completedDates: string[];
   weeklyProgress: WeeklyProgress;
   refresh: () => Promise<void>;
+  linkLegacyWorkspace: () => Promise<void>;
+  startFreshWorkspace: () => Promise<void>;
+  completeLocalOnboarding: (input: OnboardingProfileInput) => Promise<void>;
   updateProfile: (profile: UserProfile) => Promise<void>;
   updateWeeklyPlan: (draft: WeeklyPlanDraft) => Promise<void>;
   resetWeeklyPlan: () => Promise<void>;
@@ -73,8 +83,11 @@ function isSameLocalDay(left: string, right: Date) {
 
 export function GymTrackProvider({ children }: PropsWithChildren) {
   const db = useSQLiteContext();
+  const { accountProfile, updateDisplayName, user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadedUserId, setLoadedUserId] = useState<string | null>(null);
+  const [legacyMigrationRequired, setLegacyMigrationRequired] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan | null>(null);
   const [muscleGroups, setMuscleGroups] = useState<MuscleGroup[]>([]);
@@ -83,15 +96,46 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
   const [recentWorkouts, setRecentWorkouts] = useState<RecentWorkout[]>([]);
   const [completedDates, setCompletedDates] = useState<string[]>([]);
   const [completedSnapshots, setCompletedSnapshots] = useState<CompletedSnapshot[]>([]);
+  const refreshId = useRef(0);
+
+  const clearPrivateState = useCallback(() => {
+    setLoadedUserId(null);
+    setProfile(null);
+    setWeeklyPlan(null);
+    setActiveWorkout(null);
+    setPendingRoutine(null);
+    setRecentWorkouts([]);
+    setCompletedDates([]);
+    setCompletedSnapshots([]);
+  }, []);
 
   const refresh = useCallback(async () => {
+    const requestId = ++refreshId.current;
+    if (!user) {
+      clearPrivateState();
+      setLegacyMigrationRequired(false);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     try {
-      const nextProfile = await getProfile(db);
+      const legacy = await getLegacyDataStatus(db, user.id);
+      if (requestId !== refreshId.current) return;
+      if (legacy.requiresDecision) {
+        clearPrivateState();
+        setLegacyMigrationRequired(true);
+        setError(null);
+        return;
+      }
+      setLegacyMigrationRequired(false);
+      const nextProfile = await ensureUserWorkspace(db, user.id, accountProfile?.displayName ?? 'Atleta');
       const [nextPlan, nextMuscles, nextActive, nextPending, nextRecent, nextDates, nextSnapshots] = await Promise.all([
-        ensureActiveWeeklyPlan(db, nextProfile.id), listMuscleGroups(db), getActiveWorkout(db),
-        getPendingRoutineSummary(db), listRecentWorkouts(db), listCompletedDates(db, historyStartIso()),
-        listCompletedSessionSnapshots(db, historyStartIso()),
+        ensureActiveWeeklyPlan(db, user.id), listMuscleGroups(db), getActiveWorkout(db, user.id),
+        getPendingRoutineSummary(db, user.id), listRecentWorkouts(db, user.id), listCompletedDates(db, user.id, historyStartIso()),
+        listCompletedSessionSnapshots(db, user.id, historyStartIso()),
       ]);
+      if (requestId !== refreshId.current) return;
       setProfile(nextProfile);
       setWeeklyPlan(nextPlan);
       setMuscleGroups(nextMuscles);
@@ -100,18 +144,25 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
       setRecentWorkouts(nextRecent);
       setCompletedDates(nextDates);
       setCompletedSnapshots(nextSnapshots);
+      setLoadedUserId(user.id);
       setError(null);
     } catch (reason) {
+      if (requestId !== refreshId.current) return;
+      clearPrivateState();
       setError(reason instanceof Error ? reason.message : 'No se pudieron cargar los datos locales.');
     } finally {
-      setLoading(false);
+      if (requestId === refreshId.current) setLoading(false);
     }
-  }, [db]);
+  }, [accountProfile, clearPrivateState, db, user]);
 
   useEffect(() => {
-    const timer = setTimeout(() => { void refresh(); }, 0);
+    const timer = setTimeout(() => {
+      clearPrivateState();
+      setLoading(Boolean(user));
+      void refresh();
+    }, 0);
     return () => clearTimeout(timer);
-  }, [refresh]);
+  }, [clearPrivateState, refresh, user]);
 
   const weeklyProgress = useMemo<WeeklyProgress>(() => {
     const weekStart = startOfWeek();
@@ -124,10 +175,16 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
     };
   }, [completedSnapshots, weeklyPlan]);
   const todayCompletedWorkout = useMemo(() => recentWorkouts.find((workout) => isSameLocalDay(workout.completedAt, new Date())) ?? null, [recentWorkouts]);
+  const requireUserId = useCallback(() => {
+    if (!user || loadedUserId !== user.id) throw new Error('Los datos del usuario activo todavía no están disponibles.');
+    return user.id;
+  }, [loadedUserId, user]);
 
-  const value = useMemo<GymTrackContextValue>(() => ({
+  const value: GymTrackContextValue = {
     loading,
     error,
+    localReady: Boolean(user && loadedUserId === user.id),
+    legacyMigrationRequired,
     profile,
     weeklyPlan,
     muscleGroups,
@@ -138,18 +195,37 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
     completedDates,
     weeklyProgress,
     refresh,
-    updateProfile: async (nextProfile) => { setProfile(await persistProfile(db, nextProfile)); },
+    linkLegacyWorkspace: async () => {
+      if (!user) throw new Error('La sesión ya no está disponible.');
+      await linkLegacyData(db, user.id, accountProfile?.displayName ?? 'Atleta');
+      await refresh();
+    },
+    startFreshWorkspace: async () => {
+      if (!user) throw new Error('La sesión ya no está disponible.');
+      await archiveLegacyAndStartFresh(db, user.id, accountProfile?.displayName ?? 'Atleta');
+      await refresh();
+    },
+    completeLocalOnboarding: async (input) => {
+      if (!user) throw new Error('La sesión ya no está disponible.');
+      await saveOnboardingProfile(db, user.id, input);
+      await ensureActiveWeeklyPlan(db, user.id);
+      await refresh();
+    },
+    updateProfile: async (nextProfile) => {
+      const userId = requireUserId();
+      if (nextProfile.id !== userId) throw new Error('El perfil no pertenece al usuario activo.');
+      const saved = await persistProfile(db, nextProfile);
+      await updateDisplayName(saved.displayName);
+      setProfile(saved);
+    },
     updateWeeklyPlan: async (draft) => {
-      if (!profile) throw new Error('No se encontró el perfil local.');
-      await saveWeeklyPlan(db, profile.id, { ...draft, source: 'manual' });
+      const userId = requireUserId();
+      await saveWeeklyPlan(db, userId, { ...draft, source: 'manual' });
       await refresh();
     },
-    resetWeeklyPlan: async () => {
-      if (!profile) throw new Error('No se encontró el perfil local.');
-      await resetWeeklyPlanToDefault(db, profile.id);
-      await refresh();
-    },
+    resetWeeklyPlan: async () => { await resetWeeklyPlanToDefault(db, requireUserId()); await refresh(); },
     beginWorkout: async (options) => {
+      const userId = requireUserId();
       if (!weeklyPlan) throw new Error('No se encontró un plan semanal activo.');
       const todayPlan = getPlanForDate(weeklyPlan, new Date());
       const isAdditional = options?.allowRest === true;
@@ -159,26 +235,41 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
         ? { ...todayPlan, sessionType: 'cardio' as const, displayName: 'Entrenamiento adicional', estimatedMinutes: 30, isOptional: true, countsTowardGoal: false, muscles: cardio ? [{ ...cardio, orderIndex: 0 }] : [] }
         : todayPlan;
       if (sessionPlan.muscles.length === 0) throw new Error('No hay músculos configurados para esta sesión.');
-      const workout = await startWorkout(db, sessionPlan, isAdditional);
+      const workout = await startWorkout(db, userId, sessionPlan, isAdditional);
       if (!workout) throw new Error('No se pudo iniciar el entrenamiento.');
       setActiveWorkout(workout);
       setPendingRoutine(null);
       return workout;
     },
     updateSet: async (set) => {
+      const userId = requireUserId();
       setActiveWorkout((current) => current ? {
         ...current,
         exercises: current.exercises.map((exercise) => ({ ...exercise, sets: exercise.sets.map((item) => item.id === set.id ? set : item) })),
       } : current);
-      await saveWorkoutSet(db, set);
+      await saveWorkoutSet(db, userId, set);
     },
-    addSet: async (workoutExerciseId) => { await addWorkoutSet(db, workoutExerciseId); setActiveWorkout(await getActiveWorkout(db)); },
-    removeSet: async (setId) => { const result = await deleteWorkoutSet(db, setId); if (result === 'removed') setActiveWorkout(await getActiveWorkout(db)); return result; },
-    completeWorkout: async (sessionId) => { await finishWorkout(db, sessionId); await refresh(); },
-    cancelActiveWorkout: async (sessionId) => { await cancelWorkout(db, sessionId); await refresh(); },
+    addSet: async (workoutExerciseId) => {
+      const userId = requireUserId();
+      await addWorkoutSet(db, userId, workoutExerciseId);
+      setActiveWorkout(await getActiveWorkout(db, userId));
+    },
+    removeSet: async (setId) => {
+      const userId = requireUserId();
+      const result = await deleteWorkoutSet(db, userId, setId);
+      if (result === 'removed') setActiveWorkout(await getActiveWorkout(db, userId));
+      return result;
+    },
+    completeWorkout: async (sessionId) => { await finishWorkout(db, requireUserId(), sessionId); await refresh(); },
+    cancelActiveWorkout: async (sessionId) => { await cancelWorkout(db, requireUserId(), sessionId); await refresh(); },
     previewRoutine: (request) => generateRoutinePreview(db, request),
-    acceptRoutine: async (preview) => { const routineId = await saveRoutine(db, preview); setPendingRoutine(await getPendingRoutineSummary(db)); return routineId; },
-  }), [activeWorkout, completedDates, db, error, loading, muscleGroups, pendingRoutine, profile, recentWorkouts, refresh, todayCompletedWorkout, weeklyPlan, weeklyProgress]);
+    acceptRoutine: async (preview) => {
+      const userId = requireUserId();
+      const routineId = await saveRoutine(db, userId, preview);
+      setPendingRoutine(await getPendingRoutineSummary(db, userId));
+      return routineId;
+    },
+  };
 
   return <GymTrackContext.Provider value={value}>{children}</GymTrackContext.Provider>;
 }

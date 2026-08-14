@@ -17,22 +17,22 @@ type PlanChoice = 'default' | 'custom';
 export function OnboardingScreen() {
   const { accountProfile, completeOnboarding } = useAuth();
   const { showToast } = useFeedback();
-  const { completeLocalOnboarding, profile } = useGymTrack();
+  const { completeLocalOnboarding, prepareCustomOnboarding, resetWeeklyPlan } = useGymTrack();
   const [step, setStep] = useState(1);
-  const [goal, setGoal] = useState<Goal>(profile?.goal ?? 'Ganar músculo');
-  const [level, setLevel] = useState<ExperienceLevel>(profile?.experienceLevel ?? 'Principiante');
-  const [height, setHeight] = useState(profile ? String(profile.heightCm) : '');
-  const [weight, setWeight] = useState(profile ? String(profile.weightKg) : '');
-  const [duration, setDuration] = useState(profile?.defaultWorkoutMinutes ?? 60);
+  const [goal, setGoal] = useState<Goal>('Ganar músculo');
+  const [level, setLevel] = useState<ExperienceLevel>('Principiante');
+  const [height, setHeight] = useState('');
+  const [weight, setWeight] = useState('');
+  const [duration, setDuration] = useState(60);
   const [planChoice, setPlanChoice] = useState<PlanChoice>('default');
   const [working, setWorking] = useState(false);
 
   const next = () => {
     if (step === 3) {
-      const parsedHeight = height.trim() ? Number(height.replace(',', '.')) : 170;
-      const parsedWeight = weight.trim() ? Number(weight.replace(',', '.')) : 70;
-      if (parsedHeight <= 0 || parsedWeight <= 0 || !Number.isFinite(parsedHeight) || !Number.isFinite(parsedWeight)) {
-        showToast({ type: 'warning', title: 'Revisa estatura y peso', message: 'Déjalos vacíos o escribe valores positivos.' });
+      const parsedHeight = Number(height.replace(',', '.'));
+      const parsedWeight = Number(weight.replace(',', '.'));
+      if (!height.trim() || !weight.trim() || !Number.isFinite(parsedHeight) || parsedHeight < 100 || parsedHeight > 250 || !Number.isFinite(parsedWeight) || parsedWeight < 30 || parsedWeight > 300) {
+        showToast({ type: 'warning', title: 'Revisa estatura y peso', message: 'Estatura: 100–250 cm. Peso: 30–300 kg.' });
         return;
       }
     }
@@ -40,20 +40,31 @@ export function OnboardingScreen() {
   };
   const complete = async () => {
     const displayName = accountProfile?.displayName.trim() || 'Atleta';
-    const heightCm = height.trim() ? Number(height.replace(',', '.')) : 170;
-    const weightKg = weight.trim() ? Number(weight.replace(',', '.')) : 70;
+    const heightCm = Number(height.replace(',', '.'));
+    const weightKg = Number(weight.replace(',', '.'));
+    if (!height.trim() || !weight.trim() || !Number.isFinite(heightCm) || heightCm < 100 || heightCm > 250 || !Number.isFinite(weightKg) || weightKg < 30 || weightKg > 300) {
+      showToast({ type: 'warning', title: 'Revisa estatura y peso', message: 'Estatura: 100–250 cm. Peso: 30–300 kg.' });
+      return;
+    }
+    const input = { displayName, heightCm, weightKg, goal, experienceLevel: level, defaultWorkoutMinutes: duration };
     setWorking(true);
     try {
-      await completeLocalOnboarding({ displayName, heightCm, weightKg, goal, experienceLevel: level, defaultWorkoutMinutes: duration });
+      if (planChoice === 'custom') {
+        prepareCustomOnboarding(input);
+        router.push('/onboarding-weekly-plan');
+        return;
+      }
+      await resetWeeklyPlan();
+      await completeLocalOnboarding(input);
       await completeOnboarding(displayName);
       showToast({ type: 'success', title: 'Perfil preparado', message: 'Tus preferencias quedaron guardadas en este dispositivo.' });
-      router.replace(planChoice === 'custom' ? '/weekly-plan' : '/');
+      router.replace('/');
     } catch (reason) {
       showToast({ type: 'error', title: 'No se pudo completar', message: reason instanceof Error ? reason.message : 'Inténtalo nuevamente.' });
     } finally { setWorking(false); }
   };
 
-  return <Screen><ScreenHeader title="Configura GymTrack" subtitle={`Paso ${step} de 5`} /><View style={styles.progress}>{[1, 2, 3, 4, 5].map((item) => <View key={item} style={[styles.progressItem, item <= step && styles.progressActive]} />)}</View>{step === 1 ? <ChoiceStep title="¿Cuál es tu objetivo principal?" options={goals} value={goal} onChange={(value) => setGoal(value as Goal)} /> : null}{step === 2 ? <ChoiceStep title="¿Cuál es tu nivel actual?" options={levels} value={level} onChange={(value) => setLevel(value as ExperienceLevel)} /> : null}{step === 3 ? <Card style={styles.card}><SectionTitle>Datos personales opcionales</SectionTitle><Text style={styles.hint}>Puedes dejarlos vacíos y actualizarlos después desde Perfil.</Text><View style={styles.row}><View style={styles.field}><Text style={styles.label}>Estatura (cm)</Text><TextInput keyboardType="decimal-pad" onChangeText={setHeight} placeholder="Opcional" placeholderTextColor={colors.textSubtle} style={styles.input} value={height} /></View><View style={styles.field}><Text style={styles.label}>Peso (kg)</Text><TextInput keyboardType="decimal-pad" onChangeText={setWeight} placeholder="Opcional" placeholderTextColor={colors.textSubtle} style={styles.input} value={weight} /></View></View></Card> : null}{step === 4 ? <ChoiceStep title="Duración habitual" options={durations.map((item) => `${item} min`)} value={`${duration} min`} onChange={(value) => setDuration(Number(value.replace(' min', '')))} /> : null}{step === 5 ? <Card style={styles.card}><SectionTitle>Plan semanal</SectionTitle><PlanOption description="Carga la distribución inicial de cinco días, cardio opcional y descanso." label="Usar plan inicial de GymTrack" selected={planChoice === 'default'} onPress={() => setPlanChoice('default')} /><PlanOption description="Termina el onboarding y abre el editor local existente." label="Personalizar mi plan" selected={planChoice === 'custom'} onPress={() => setPlanChoice('custom')} /><Text style={styles.future}>La generación con IA se incorporará en una fase futura.</Text></Card> : null}<View style={styles.actions}>{step < 5 ? <PrimaryButton icon="arrow-forward" title="Continuar" onPress={next} /> : <PrimaryButton icon="checkmark-circle-outline" loading={working} title="Completar configuración" onPress={() => void complete()} />}{step > 1 ? <SecondaryButton icon="arrow-back" title="Atrás" onPress={() => setStep((current) => current - 1)} /> : null}</View></Screen>;
+  return <Screen><ScreenHeader title="Configura GymTrack" subtitle={`Paso ${step} de 5`} /><View style={styles.progress}>{[1, 2, 3, 4, 5].map((item) => <View key={item} style={[styles.progressItem, item <= step && styles.progressActive]} />)}</View>{step === 1 ? <ChoiceStep title="¿Cuál es tu objetivo principal?" options={goals} value={goal} onChange={(value) => setGoal(value as Goal)} /> : null}{step === 2 ? <ChoiceStep title="¿Cuál es tu nivel actual?" options={levels} value={level} onChange={(value) => setLevel(value as ExperienceLevel)} /> : null}{step === 3 ? <Card style={styles.card}><SectionTitle>Datos personales</SectionTitle><Text style={styles.hint}>Confirma tus valores para personalizar tu perfil local.</Text><View style={styles.row}><View style={styles.field}><Text style={styles.label}>Estatura (cm)</Text><TextInput keyboardType="decimal-pad" onChangeText={setHeight} placeholder="100–250" placeholderTextColor={colors.textSubtle} style={styles.input} value={height} /></View><View style={styles.field}><Text style={styles.label}>Peso (kg)</Text><TextInput keyboardType="decimal-pad" onChangeText={setWeight} placeholder="30–300" placeholderTextColor={colors.textSubtle} style={styles.input} value={weight} /></View></View></Card> : null}{step === 4 ? <ChoiceStep title="Duración habitual" options={durations.map((item) => `${item} min`)} value={`${duration} min`} onChange={(value) => setDuration(Number(value.replace(' min', '')))} /> : null}{step === 5 ? <Card style={styles.card}><SectionTitle>Plan semanal</SectionTitle><PlanOption description="Carga la distribución inicial de cinco días, cardio opcional y descanso." label="Usar plan inicial de GymTrack" selected={planChoice === 'default'} onPress={() => setPlanChoice('default')} /><PlanOption description="Abre el editor y completa el onboarding únicamente después de guardar." label="Personalizar mi plan" selected={planChoice === 'custom'} onPress={() => setPlanChoice('custom')} /><Text style={styles.future}>La generación con IA se incorporará en una fase futura.</Text></Card> : null}<View style={styles.actions}>{step < 5 ? <PrimaryButton icon="arrow-forward" title="Continuar" onPress={next} /> : <PrimaryButton icon="checkmark-circle-outline" loading={working} title={planChoice === 'custom' ? 'Personalizar plan' : 'Completar configuración'} onPress={() => void complete()} />}{step > 1 ? <SecondaryButton icon="arrow-back" title="Atrás" onPress={() => setStep((current) => current - 1)} /> : null}</View></Screen>;
 }
 
 function ChoiceStep({ title, options, value, onChange }: { title: string; options: string[]; value: string; onChange: (value: string) => void }) {

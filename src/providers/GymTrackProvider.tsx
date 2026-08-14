@@ -28,6 +28,7 @@ type GymTrackContextValue = {
   error: string | null;
   localReady: boolean;
   legacyMigrationRequired: boolean;
+  pendingOnboardingProfile: OnboardingProfileInput | null;
   profile: UserProfile | null;
   weeklyPlan: WeeklyPlan | null;
   muscleGroups: MuscleGroup[];
@@ -41,6 +42,8 @@ type GymTrackContextValue = {
   linkLegacyWorkspace: () => Promise<void>;
   startFreshWorkspace: () => Promise<void>;
   completeLocalOnboarding: (input: OnboardingProfileInput) => Promise<void>;
+  prepareCustomOnboarding: (input: OnboardingProfileInput) => void;
+  clearCustomOnboarding: () => void;
   updateProfile: (profile: UserProfile) => Promise<void>;
   updateWeeklyPlan: (draft: WeeklyPlanDraft) => Promise<void>;
   resetWeeklyPlan: () => Promise<void>;
@@ -88,6 +91,7 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
   const [error, setError] = useState<string | null>(null);
   const [loadedUserId, setLoadedUserId] = useState<string | null>(null);
   const [legacyMigrationRequired, setLegacyMigrationRequired] = useState(false);
+  const [pendingOnboardingProfile, setPendingOnboardingProfile] = useState<OnboardingProfileInput | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan | null>(null);
   const [muscleGroups, setMuscleGroups] = useState<MuscleGroup[]>([]);
@@ -107,6 +111,7 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
     setRecentWorkouts([]);
     setCompletedDates([]);
     setCompletedSnapshots([]);
+    setPendingOnboardingProfile(null);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -185,6 +190,7 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
     error,
     localReady: Boolean(user && loadedUserId === user.id),
     legacyMigrationRequired,
+    pendingOnboardingProfile,
     profile,
     weeklyPlan,
     muscleGroups,
@@ -211,6 +217,8 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
       await ensureActiveWeeklyPlan(db, user.id);
       await refresh();
     },
+    prepareCustomOnboarding: (input) => setPendingOnboardingProfile(input),
+    clearCustomOnboarding: () => setPendingOnboardingProfile(null),
     updateProfile: async (nextProfile) => {
       const userId = requireUserId();
       if (nextProfile.id !== userId) throw new Error('El perfil no pertenece al usuario activo.');

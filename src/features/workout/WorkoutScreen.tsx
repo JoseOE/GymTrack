@@ -24,13 +24,16 @@ function useElapsedMinutes(startedAt: string | null) {
 }
 
 export function WorkoutScreen() {
-  const { activeWorkout, addSet, beginWorkout, cancelActiveWorkout, completeWorkout, error, loading, pendingRoutine, refresh, removeSet, todayCompletedWorkout, updateSet, weeklyPlan } = useGymTrack();
+  const { activeWorkout, addSet, beginWorkout, cancelActiveWorkout, completeWorkout, error, initializing, localReady, pendingRoutine, refresh, refreshing, removeSet, todayCompletedWorkout, updateSet, weeklyPlan } = useGymTrack();
   const { confirm, showToast } = useFeedback();
   const [working, setWorking] = useState(false);
   const elapsed = useElapsedMinutes(activeWorkout?.startedAt ?? null);
   const todaySchedule = weeklyPlan ? getPlanForDate(weeklyPlan, new Date()) : null;
 
-  useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
+  useFocusEffect(useCallback(() => {
+    if (!localReady || activeWorkout || todayCompletedWorkout) return;
+    void refresh();
+  }, [activeWorkout, localReady, refresh, todayCompletedWorkout]));
 
   const start = async (allowRest = false) => {
     setWorking(true);
@@ -55,7 +58,7 @@ export function WorkoutScreen() {
     return result;
   };
 
-  if (loading) return <Screen key="loading"><ScreenHeader title="Entrenar" subtitle="Preparando tu sesión local" /><Card style={styles.centerCard}><ActivityIndicator color={colors.primary} size="large" /><Text style={styles.emptyText}>Cargando entrenamiento…</Text></Card></Screen>;
+  if (initializing || refreshing) return <Screen key="loading"><ScreenHeader title="Entrenar" subtitle={initializing ? 'Preparando tu sesión local' : 'Actualizando tu sesión'} /><Card style={styles.centerCard}><ActivityIndicator color={colors.primary} size="large" /><Text style={styles.emptyText}>{initializing ? 'Cargando entrenamiento…' : 'Comprobando cambios locales…'}</Text></Card></Screen>;
   if (activeWorkout) {
     const sets = activeWorkout.exercises.flatMap((exercise) => exercise.sets);
     const completed = sets.filter((set) => set.completed).length;
@@ -68,7 +71,7 @@ export function WorkoutScreen() {
   if (todaySchedule.sessionType === 'rest') return <Screen key="rest"><ScreenHeader title="Entrenar" subtitle={metadata.dayName} /><Card style={styles.centerCard}><View style={styles.restIcon}><Ionicons color={colors.textMuted} name="moon-outline" size={38} /></View><Text style={styles.emptyTitle}>Día de descanso</Text><Text style={styles.emptyText}>Hoy toca recuperar. Tu próximo entrenamiento está en el plan semanal.</Text></Card></Screen>;
   const plannedName = pendingRoutine?.name ?? todaySchedule.displayName;
   const plannedMinutes = pendingRoutine?.estimatedMinutes ?? todaySchedule.estimatedMinutes;
-  return <Screen key="not-started"><ScreenHeader title="Entrenar" subtitle={`${metadata.dayName} · ${pendingRoutine ? 'Rutina aceptada' : 'Tu plan de hoy'}`} /><Card style={styles.empty}><Text style={styles.planLabel}>{pendingRoutine ? 'RUTINA ACEPTADA' : todaySchedule.isOptional ? 'SESIÓN OPCIONAL' : 'ENTRENAMIENTO DE HOY'}</Text><Text style={styles.emptyTitle}>{plannedName}</Text><Text style={styles.emptyText}>{pendingRoutine ? `Usaremos los ${pendingRoutine.exerciseCount} ejercicios que guardaste en Coach.` : 'Crearemos una sesión coherente con estos músculos usando tu catálogo local.'}</Text>{plannedMinutes ? <Text style={styles.duration}>{plannedMinutes} min estimados</Text> : null}</Card><PrimaryButton loading={working} title={todaySchedule.isOptional && !pendingRoutine ? 'Iniciar sesión opcional' : 'Iniciar entrenamiento'} onPress={() => void start()} /></Screen>;
+  return <Screen key="not-started"><ScreenHeader title="Entrenar" subtitle={`${metadata.dayName} · ${pendingRoutine ? 'Rutina aceptada' : 'Tu plan de hoy'}`} /><Card style={styles.empty}><Text style={styles.planLabel}>{pendingRoutine ? 'RUTINA ACEPTADA' : todaySchedule.isOptional ? 'SESIÓN OPCIONAL' : 'ENTRENAMIENTO DE HOY'}</Text><Text style={styles.emptyTitle}>{plannedName}</Text><Text style={styles.emptyText}>{pendingRoutine ? `Usaremos los ${pendingRoutine.exerciseCount} ejercicios que guardaste en Coach.` : 'Crearemos una sesión coherente con estos músculos usando tu catálogo local.'}</Text>{plannedMinutes ? <Text style={styles.duration}>{plannedMinutes} min estimados</Text> : null}</Card><PrimaryButton disabled={!localReady || !weeklyPlan} loading={working} title={todaySchedule.isOptional && !pendingRoutine ? 'Iniciar sesión opcional' : 'Iniciar entrenamiento'} onPress={() => void start()} /></Screen>;
 }
 
 const styles = StyleSheet.create({

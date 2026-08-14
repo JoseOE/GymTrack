@@ -11,10 +11,10 @@ import { getPlanForDate } from '@/services/weeklyPlanService';
 function dateKey(date: Date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; }
 
 export function CalendarScreen() {
-  const { completedDates, loading, weeklyPlan } = useGymTrack();
+  const { completedDates, initializing, refreshing, weeklyPlan } = useGymTrack();
   const [weekOffset, setWeekOffset] = useState(0);
   const days = useMemo(() => getWeekDates(new Date(), weekOffset), [weekOffset]);
-  if (!weeklyPlan) return <Screen><ScreenHeader title="Calendario" subtitle={loading ? 'Cargando tu plan semanal…' : 'Plan semanal no disponible'} /></Screen>;
+  if (!weeklyPlan) return <Screen><ScreenHeader title="Calendario" subtitle={initializing || refreshing ? 'Cargando tu plan semanal…' : 'Plan semanal no disponible'} /></Screen>;
   const completedKeys = new Set(completedDates.map((value) => dateKey(new Date(value))));
   const todayKey = dateKey(new Date());
   const range = `${days[0].getDate()}–${days[6].getDate()} ${new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric' }).format(days[6]).toUpperCase()}`;

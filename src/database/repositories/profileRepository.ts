@@ -28,10 +28,24 @@ function mapProfile(row: ProfileRow): UserProfile {
   };
 }
 
-export async function getProfile(db: SQLiteDatabase) {
-  const row = await db.getFirstAsync<ProfileRow>('SELECT * FROM user_profile WHERE id = ?', 'local-user');
+export async function getProfile(db: SQLiteDatabase, userId: string) {
+  const row = await db.getFirstAsync<ProfileRow>('SELECT * FROM user_profile WHERE id = ?', userId);
   if (!row) throw new Error('No se encontró el perfil local.');
   return mapProfile(row);
+}
+
+export async function ensureProfile(db: SQLiteDatabase, userId: string, displayName: string) {
+  const now = new Date().toISOString();
+  await db.runAsync(
+    `INSERT OR IGNORE INTO user_profile
+      (id, display_name, height_cm, weight_kg, goal, experience_level, default_workout_minutes, created_at, updated_at)
+     VALUES (?, ?, 170, 70, 'Ganar músculo', 'Principiante', 60, ?, ?)`,
+    userId,
+    displayName.trim() || 'Atleta',
+    now,
+    now,
+  );
+  return getProfile(db, userId);
 }
 
 export async function saveProfile(db: SQLiteDatabase, profile: UserProfile) {
@@ -48,5 +62,5 @@ export async function saveProfile(db: SQLiteDatabase, profile: UserProfile) {
     updatedAt,
     profile.id,
   );
-  return getProfile(db);
+  return getProfile(db, profile.id);
 }

@@ -14,8 +14,8 @@ const exerciseCounts = ['1', '2', '3', '4'];
 const limitations = ['Ninguna', 'Hombro', 'Rodilla', 'Espalda'];
 
 export function CoachScreen() {
-  const { loading, weeklyPlan } = useGymTrack();
-  if (!weeklyPlan) return <Screen><ScreenHeader title="Coach" subtitle={loading ? 'Cargando tu plan semanal…' : 'Plan semanal no disponible'} /></Screen>;
+  const { initializing, refreshing, weeklyPlan } = useGymTrack();
+  if (!weeklyPlan) return <Screen><ScreenHeader title="Coach" subtitle={initializing || refreshing ? 'Cargando tu plan semanal…' : 'Plan semanal no disponible'} /></Screen>;
   const defaultMuscles = getPlanForDate(weeklyPlan, new Date()).muscles.map((muscle) => muscle.name);
   return <CoachForm defaultMuscles={defaultMuscles} key={weeklyPlan.updatedAt} />;
 }

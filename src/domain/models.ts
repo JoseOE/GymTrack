@@ -1,4 +1,4 @@
-export type Goal = 'Ganar músculo' | 'Ganar fuerza' | 'Perder grasa' | 'Mejorar salud';
+export type Goal = 'Ganar músculo' | 'Ganar fuerza' | 'Perder grasa' | 'Mejorar condición física' | 'Salud general' | 'Mejorar salud';
 export type ExperienceLevel = 'Principiante' | 'Intermedio' | 'Avanzado';
 
 export type UserProfile = {
@@ -11,6 +11,15 @@ export type UserProfile = {
   defaultWorkoutMinutes: number;
   createdAt: string;
   updatedAt: string;
+};
+
+export type OnboardingProfileInput = {
+  displayName: string;
+  heightCm: number;
+  weightKg: number;
+  goal: Goal;
+  experienceLevel: ExperienceLevel;
+  defaultWorkoutMinutes: number;
 };
 
 export type MuscleGroup = {
@@ -61,6 +70,7 @@ export type WeeklyPlanDraft = {
 export type CatalogExercise = {
   id: string;
   name: string;
+  primaryMuscleId: string;
   primaryMuscle: string;
   exerciseFamily: string;
   movementPattern: string;

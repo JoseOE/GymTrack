@@ -1,0 +1,35 @@
+import type { SQLiteDatabase } from 'expo-sqlite';
+
+import { schemaV1 } from '@/database/schema/v1';
+
+type Migration = { version: number; name: string; sql: string };
+
+const migrations: Migration[] = [
+  { version: 1, name: 'initial_local_gym_schema', sql: schemaV1 },
+];
+
+export async function runMigrations(db: SQLiteDatabase) {
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS _migrations (
+      version INTEGER PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      applied_at TEXT NOT NULL
+    );
+  `);
+
+  const applied = await db.getAllAsync<{ version: number }>('SELECT version FROM _migrations');
+  const appliedVersions = new Set(applied.map((item) => item.version));
+
+  for (const migration of migrations) {
+    if (appliedVersions.has(migration.version)) continue;
+    await db.withExclusiveTransactionAsync(async (transaction) => {
+      await transaction.execAsync(migration.sql);
+      await transaction.runAsync(
+        'INSERT INTO _migrations (version, name, applied_at) VALUES (?, ?, ?)',
+        migration.version,
+        migration.name,
+        new Date().toISOString(),
+      );
+    });
+  }
+}

@@ -3,6 +3,7 @@ import * as Linking from 'expo-linking';
 import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { AccountProfile, AuthDeepLinkState, SignUpInput, SignUpResult } from '@/domain/auth';
+import { SIGN_UP_OTP_LENGTH } from '@/constants/auth';
 import { supabase } from '@/lib/supabase';
 import { exchangeAuthDeepLink, getAuthDeepLinkPurpose, PASSWORD_RECOVERY_REDIRECT, SIGNUP_CONFIRMATION_REDIRECT } from '@/services/authDeepLinkService';
 import { getOrCreateAccountProfile, updateAccountProfile } from '@/supabase/profilesRepository';
@@ -16,8 +17,11 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   authDeepLink: AuthDeepLinkState;
   passwordRecovery: boolean;
+  pendingSignUpEmail: string | null;
   signUp: (input: SignUpInput) => Promise<SignUpResult>;
   resendSignUpConfirmation: (email: string) => Promise<void>;
+  verifySignUpOtp: (email: string, token: string) => Promise<void>;
+  clearPendingSignUpEmail: () => void;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -45,6 +49,7 @@ function authMessage(reason: unknown) {
   const message = reason.message.toLowerCase();
   if (message.includes('invalid login credentials')) return 'Correo o contraseña incorrectos.';
   if (message.includes('email not confirmed')) return 'Confirma tu correo antes de iniciar sesión.';
+  if (message.includes('otp') || message.includes('token has expired') || message.includes('invalid token')) return 'El código no es válido o ya expiró.';
   if (message.includes('user already registered')) return 'Ya existe una cuenta con ese correo.';
   if (message.includes('rate limit') || message.includes('too many requests') || message.includes('over_email_send_rate_limit')) return 'Espera un momento antes de solicitar otro correo.';
   if (message.includes('password')) return 'La contraseña no cumple los requisitos de seguridad.';
@@ -59,6 +64,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [accountProfile, setAccountProfile] = useState<AccountProfile | null>(null);
   const [authDeepLink, setAuthDeepLink] = useState<AuthDeepLinkState>(idleDeepLink);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
+  const [pendingSignUpEmail, setPendingSignUpEmail] = useState<string | null>(null);
   const hydrationId = useRef(0);
   const hydratedUserId = useRef<string | null>(null);
   const handledAuthLinks = useRef(new Set<string>());
@@ -136,9 +142,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
       }
       if (event === 'SIGNED_OUT') {
         setPasswordRecovery(false);
+        setPendingSignUpEmail(null);
         setAuthDeepLink(idleDeepLink);
       }
       if (event === 'SIGNED_IN' && hasConfirmedEmail(nextSession)) {
+        setPendingSignUpEmail(null);
         setAuthDeepLink((current) => current.status === 'error' && current.purpose === 'signup' ? idleDeepLink : current);
       }
       if (event === 'INITIAL_SESSION') return;
@@ -194,26 +202,52 @@ export function AuthProvider({ children }: PropsWithChildren) {
     isAuthenticated: Boolean(session?.user),
     authDeepLink,
     passwordRecovery,
+    pendingSignUpEmail,
     signUp: async ({ displayName, email, password }) => {
+      const normalizedEmail = email.trim().toLowerCase();
       const { data, error: signUpError } = await supabase.auth.signUp({
-        email: email.trim().toLowerCase(),
+        email: normalizedEmail,
         password,
         options: { data: { display_name: displayName.trim() }, emailRedirectTo: SIGNUP_CONFIRMATION_REDIRECT },
       });
       if (signUpError) throw new Error(authMessage(signUpError));
+      setPendingSignUpEmail(data.session ? null : normalizedEmail);
       return { requiresEmailConfirmation: !data.session };
     },
     resendSignUpConfirmation: async (email) => {
+      const normalizedEmail = email.trim().toLowerCase();
       const { error: resendError } = await supabase.auth.resend({
         type: 'signup',
-        email: email.trim().toLowerCase(),
+        email: normalizedEmail,
         options: { emailRedirectTo: SIGNUP_CONFIRMATION_REDIRECT },
       });
       if (resendError) throw new Error(authMessage(resendError));
+      setPendingSignUpEmail(normalizedEmail);
     },
+    verifySignUpOtp: async (email, token) => {
+      const normalizedEmail = email.trim().toLowerCase();
+      const normalizedToken = token.replace(/\D/g, '');
+      if (normalizedToken.length !== SIGN_UP_OTP_LENGTH) throw new Error(`Escribe el código completo de ${SIGN_UP_OTP_LENGTH} dígitos.`);
+      const { data, error: verifyError } = await supabase.auth.verifyOtp({
+        email: normalizedEmail,
+        token: normalizedToken,
+        type: 'email',
+      });
+      if (verifyError) throw new Error(authMessage(verifyError));
+      if (!data.session) throw new Error('Supabase no devolvió una sesión válida después de verificar el código.');
+      setPendingSignUpEmail(null);
+      setAuthDeepLink(idleDeepLink);
+      await hydrate(data.session);
+    },
+    clearPendingSignUpEmail: () => setPendingSignUpEmail(null),
     signIn: async (email, password) => {
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
-      if (signInError) throw new Error(authMessage(signInError));
+      const normalizedEmail = email.trim().toLowerCase();
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
+      if (signInError) {
+        if (signInError.message.toLowerCase().includes('email not confirmed')) setPendingSignUpEmail(normalizedEmail);
+        throw new Error(authMessage(signInError));
+      }
+      setPendingSignUpEmail(null);
       setAuthDeepLink((current) => current.status === 'error' && current.purpose === 'signup' ? idleDeepLink : current);
       await hydrate(data.session);
     },
@@ -242,7 +276,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setAccountProfile(await updateAccountProfile(session.user.id, { displayName }));
     },
     refreshAccountProfile,
-  }), [accountProfile, authDeepLink, error, hydrate, loading, passwordRecovery, refreshAccountProfile, session]);
+  }), [accountProfile, authDeepLink, error, hydrate, loading, passwordRecovery, pendingSignUpEmail, refreshAccountProfile, session]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

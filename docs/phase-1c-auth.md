@@ -13,16 +13,34 @@ El cliente solo usa la clave publicable. Supabase se limita a Auth y a la tabla
 `public.profiles`; entrenamientos, rutinas, planes y preferencias permanecen en
 SQLite.
 
-## Confirmacion y recuperacion de correo
+## Confirmación de registro por OTP
 
-El cliente usa PKCE. El registro contempla las dos respuestas de Supabase: si
-hay sesion, el flujo continua; si no la hay, muestra `Revisa tu correo` y no
-simula un login. La confirmacion vuelve a GymTrack, intercambia una sola vez el
-codigo mediante Supabase y muestra el resultado antes de continuar.
+El flujo principal de registro usa un código OTP de 8 dígitos dentro de
+GymTrack. Si `signUp` no devuelve sesión, la app solicita el código, lo valida
+con `verifyOtp({ email, token, type: 'email' })` y solo entonces hidrata la
+sesión real. El código y la contraseña no se guardan en SQLite ni se registran.
 
-La recuperacion vuelve a una pantalla con `Nueva contrasena` y `Confirmar
-contrasena`. Solo habilita el formulario despues de validar el callback PKCE y
-actualiza mediante Supabase Auth. La app no analiza ni registra tokens.
+En Supabase Dashboard abre **Authentication > Emails > Email Templates >
+Confirm signup**. El contenido debe mostrar `{{ .Token }}` y no depender de
+`{{ .ConfirmationURL }}` para el flujo principal. Ejemplo sencillo:
+
+```html
+<h2>Confirma tu cuenta de GymTrack</h2>
+<p>Tu código de verificación es:</p>
+<p style="font-size: 28px; font-weight: 700; letter-spacing: 6px;">{{ .Token }}</p>
+<p>Ingresa este código de 8 dígitos en GymTrack.</p>
+```
+
+La compatibilidad con `gymtrack://auth/callback` se conserva para correos
+anteriores que todavía contengan un enlace. El registro nuevo guía al usuario
+por OTP.
+
+## Recuperación de contraseña
+
+La recuperación continúa usando PKCE y `gymtrack://reset-password`. Vuelve a
+una pantalla con `Nueva contraseña` y `Confirmar contraseña`, valida el callback
+antes de habilitar el formulario y actualiza mediante Supabase Auth. La app no
+analiza ni registra tokens.
 
 En Supabase Dashboard, dentro de Auth > URL Configuration, deben autorizarse
 exactamente estas Additional Redirect URLs:
@@ -32,7 +50,7 @@ gymtrack://auth/callback
 gymtrack://reset-password
 ```
 
-El scheme ya esta declarado como `gymtrack` en `app.json`. Los callbacks nativos
+El scheme ya está declarado como `gymtrack` en `app.json`. Los callbacks nativos
 deben validarse en un development build o binario Android; Expo Go no registra
 el scheme propio de la aplicacion. PKCE requiere abrir el correo en el mismo
 dispositivo e instalacion que inicio el flujo, porque alli se conserva el
@@ -61,8 +79,8 @@ falsa de migracion.
 
 ## QA que necesita cuentas reales
 
-La prueba completa requiere dos cuentas de prueba y, si Supabase exige confirmar
-correo, acceso a sus bandejas. Se debe comprobar registro, confirmacion y
-callback PKCE, login, recuperacion y cambio de contrasena, persistencia tras
+La prueba completa requiere dos cuentas de prueba y acceso a sus bandejas. Se
+debe comprobar registro y confirmación por OTP, el callback de compatibilidad de
+registro, login, recuperación PKCE y cambio de contraseña, persistencia tras
 reinicio, onboarding, logout, aislamiento A/B/A y el flujo de consentimiento en
-una instalacion que ya tenga datos de Fase 1B.
+una instalación que ya tenga datos de Fase 1B.

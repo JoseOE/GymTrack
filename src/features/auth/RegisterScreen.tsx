@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { Card, PrimaryButton, SecondaryButton } from '@/components/ui';
+import { SIGN_UP_OTP_LENGTH } from '@/constants/auth';
 import { colors, spacing, typography } from '@/constants/theme';
 import { AuthField, AuthShell } from '@/features/auth/AuthShell';
 import { useAuth } from '@/providers/AuthProvider';
@@ -11,14 +12,16 @@ import { useFeedback } from '@/providers/FeedbackProvider';
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function RegisterScreen() {
-  const { resendSignUpConfirmation, signUp } = useAuth();
+  const { clearPendingSignUpEmail, pendingSignUpEmail, resendSignUpConfirmation, signUp, verifySignUpOtp } = useAuth();
   const { showToast } = useFeedback();
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(pendingSignUpEmail ?? '');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [working, setWorking] = useState(false);
-  const [checkEmail, setCheckEmail] = useState(false);
+  const [verifyingEmail, setVerifyingEmail] = useState(Boolean(pendingSignUpEmail));
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);
   const submit = async () => {
     if (!name.trim()) { showToast({ type: 'warning', title: 'Escribe tu nombre' }); return; }
@@ -28,7 +31,9 @@ export function RegisterScreen() {
     setWorking(true);
     try {
       const result = await signUp({ displayName: name, email, password });
-      if (result.requiresEmailConfirmation) setCheckEmail(true);
+      setPassword('');
+      setConfirmation('');
+      if (result.requiresEmailConfirmation) setVerifyingEmail(true);
       else showToast({ type: 'success', title: 'Cuenta creada', message: 'Ahora completa tu perfil de entrenamiento.' });
     } catch (reason) {
       showToast({ type: 'error', title: 'No se pudo crear la cuenta', message: reason instanceof Error ? reason.message : 'Inténtalo nuevamente.' });
@@ -43,7 +48,23 @@ export function RegisterScreen() {
       showToast({ type: 'error', title: 'No se pudo reenviar', message: reason instanceof Error ? reason.message : 'Inténtalo nuevamente.' });
     } finally { setResending(false); }
   };
-  if (checkEmail) return <AuthShell title="Revisa tu correo" subtitle="Tu cuenta fue creada, pero todavía no hay una sesión activa."><Card style={styles.confirmation}><Text style={styles.confirmationTitle}>Confirma tu cuenta</Text><Text style={styles.confirmationText}>Abre el mensaje enviado a {email.trim().toLowerCase()} y confirma tu correo. Después vuelve a GymTrack e inicia sesión.</Text></Card><PrimaryButton icon="refresh" loading={resending} title="Reenviar correo" onPress={() => void resend()} /><SecondaryButton icon="log-in-outline" title="Ir a iniciar sesión" onPress={() => router.replace('/login')} /><SecondaryButton icon="arrow-back" title="Volver al inicio" onPress={() => router.replace('/welcome')} /></AuthShell>;
+  const verify = async () => {
+    if (verificationCode.length !== SIGN_UP_OTP_LENGTH) { showToast({ type: 'warning', title: 'Código incompleto', message: `Escribe los ${SIGN_UP_OTP_LENGTH} dígitos enviados a tu correo.` }); return; }
+    setVerifying(true);
+    try {
+      await verifySignUpOtp(email, verificationCode);
+      setVerificationCode('');
+      showToast({ type: 'success', title: 'Correo verificado', message: 'Tu sesión ya está activa.' });
+    } catch (reason) {
+      showToast({ type: 'error', title: 'No se pudo verificar', message: reason instanceof Error ? reason.message : 'Solicita un código nuevo.' });
+    } finally { setVerifying(false); }
+  };
+  const changeEmail = () => {
+    clearPendingSignUpEmail();
+    setVerificationCode('');
+    setVerifyingEmail(false);
+  };
+  if (verifyingEmail) return <AuthShell title="Verifica tu correo" subtitle={`Ingresa el código de ${SIGN_UP_OTP_LENGTH} dígitos que enviamos a ${email.trim().toLowerCase()}.`}><Card style={styles.confirmation}><Text style={styles.confirmationTitle}>Código de verificación</Text><Text style={styles.confirmationText}>El código confirma tu cuenta dentro de GymTrack. No necesitas abrir un enlace.</Text></Card><AuthField autoComplete="one-time-code" editable={!verifying && !resending} inputMode="numeric" keyboardType="number-pad" label="Código de verificación" maxLength={SIGN_UP_OTP_LENGTH} onChangeText={(value) => setVerificationCode(value.replace(/\D/g, '').slice(0, SIGN_UP_OTP_LENGTH))} placeholder="12345678" textContentType="oneTimeCode" value={verificationCode} /><PrimaryButton disabled={verificationCode.length !== SIGN_UP_OTP_LENGTH || resending} icon="checkmark-circle-outline" loading={verifying} title="Verificar correo" onPress={() => void verify()} /><SecondaryButton disabled={verifying} icon="refresh" loading={resending} title="Reenviar código" onPress={() => void resend()} /><SecondaryButton disabled={verifying || resending} icon="arrow-back" title="Cambiar correo / Volver" onPress={changeEmail} /></AuthShell>;
   return <AuthShell title="Crear cuenta" subtitle="Tu contraseña se envía únicamente a Supabase Auth; GymTrack no la guarda localmente."><AuthField autoCapitalize="words" autoComplete="name" label="Nombre" onChangeText={setName} value={name} /><AuthField autoComplete="email" keyboardType="email-address" label="Correo" onChangeText={setEmail} value={email} /><AuthField autoComplete="new-password" label="Contraseña" onChangeText={setPassword} secureTextEntry value={password} /><AuthField autoComplete="new-password" label="Confirmar contraseña" onChangeText={setConfirmation} secureTextEntry value={confirmation} /><PrimaryButton icon="person-add-outline" loading={working} title="Crear cuenta" onPress={() => void submit()} /><View style={styles.accountPrompt}><Text style={styles.accountPromptText}>¿Ya tienes una cuenta?</Text><SecondaryButton icon="log-in-outline" title="Iniciar sesión" onPress={() => router.replace('/login')} /></View><SecondaryButton icon="arrow-back" title="Volver al inicio" onPress={() => router.replace('/welcome')} /></AuthShell>;
 }
 

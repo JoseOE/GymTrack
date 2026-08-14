@@ -59,9 +59,9 @@ export function PrimaryButton({ title, icon = 'play', onPress, disabled = false,
   );
 }
 
-export function SecondaryButton({ title, icon, onPress, tone = 'default', disabled = false }: { title: string; icon?: IconName; onPress?: () => void; tone?: 'default' | 'danger'; disabled?: boolean }) {
+export function SecondaryButton({ title, icon, onPress, tone = 'default', disabled = false, loading = false }: { title: string; icon?: IconName; onPress?: () => void; tone?: 'default' | 'danger'; disabled?: boolean; loading?: boolean }) {
   const foreground = tone === 'danger' ? colors.danger : colors.text;
-  return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.secondaryButton, tone === 'danger' && styles.secondaryDanger, pressed && styles.pressed, disabled && styles.disabled]}>{icon ? <Ionicons color={foreground} name={icon} size={18} /> : null}<Text style={[styles.secondaryText, tone === 'danger' && styles.secondaryDangerText]}>{title}</Text></Pressable>;
+  return <Pressable accessibilityRole="button" disabled={disabled || loading} onPress={onPress} style={({ pressed }) => [styles.secondaryButton, tone === 'danger' && styles.secondaryDanger, pressed && styles.pressed, (disabled || loading) && styles.disabled]}>{loading ? <ActivityIndicator color={foreground} /> : icon ? <Ionicons color={foreground} name={icon} size={18} /> : null}<Text style={[styles.secondaryText, tone === 'danger' && styles.secondaryDangerText]}>{title}</Text></Pressable>;
 }
 
 export function Chip({ label, selected, onPress }: { label: string; selected?: boolean; onPress?: () => void }) {

@@ -28,6 +28,57 @@ export type MuscleGroup = {
   parentId: string | null;
 };
 
+export type EquipmentType = 'free_weight' | 'machine' | 'cable' | 'bench' | 'rack' | 'bodyweight' | 'cardio' | 'accessory' | 'other';
+export type TrainingLocationType = 'gym' | 'home' | 'other';
+
+export type TrainingLocation = {
+  id: string;
+  ownerUserId: string;
+  name: string;
+  locationType: TrainingLocationType;
+  isActive: boolean;
+  isDefault: boolean;
+  equipmentCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type EquipmentCatalogItem = {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  equipmentType: EquipmentType;
+  catalogVersion: number;
+  enabled: boolean;
+};
+
+export type EquipmentExerciseSummary = {
+  id: string;
+  name: string;
+  muscle: string;
+};
+
+export type EquipmentDetails = EquipmentCatalogItem & {
+  aliases: string[];
+  exercises: EquipmentExerciseSummary[];
+};
+
+export type CustomEquipment = {
+  id: string;
+  ownerUserId: string;
+  trainingLocationId: string;
+  name: string;
+  category: string | null;
+  notes: string | null;
+  source: 'manual' | 'ai';
+  catalogMatchId: string | null;
+  active: boolean;
+  linkedExerciseIds: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type WeeklyPlanSource = 'default' | 'manual' | 'ai';
 export type WeeklyPlanSessionType = 'strength' | 'cardio' | 'rest';
 
@@ -137,6 +188,8 @@ export type RoutinePreview = {
   name: string;
   estimatedMinutes: number;
   exercises: RoutinePreviewExercise[];
+  locationName: string;
+  availabilityMessage: string | null;
 };
 
 export type PendingRoutineSummary = {

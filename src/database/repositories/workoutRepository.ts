@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { listExercisesForMuscleIds } from '@/database/repositories/catalogRepository';
+import { getActiveTrainingLocation, listAvailableExerciseIds } from '@/database/repositories/equipmentRepository';
 import type { ActiveWorkout, CatalogExercise, RecentWorkout, RemoveWorkoutSetResult, WeeklyPlanDay, WorkoutExercise, WorkoutSet } from '@/domain/models';
 import { getDefaultExerciseCount } from '@/services/weeklyPlanService';
 import { createId } from '@/utils/id';
@@ -85,13 +86,16 @@ export async function getActiveWorkout(db: SQLiteDatabase, ownerUserId: string):
   };
 }
 
-async function getScheduleExercises(db: SQLiteDatabase, day: WeeklyPlanDay) {
+async function getScheduleExercises(db: SQLiteDatabase, ownerUserId: string, day: WeeklyPlanDay) {
+  const location = await getActiveTrainingLocation(db, ownerUserId);
+  if (!location) throw new Error('Configura una ubicación de entrenamiento antes de iniciar.');
+  const availableIds = await listAvailableExerciseIds(db, ownerUserId, location.id);
   const candidatesByMuscle = await Promise.all(day.muscles.map(async (muscle) => ({
     muscle,
-    exercises: await listExercisesForMuscleIds(db, [muscle.id]),
+    exercises: (await listExercisesForMuscleIds(db, [muscle.id])).filter((exercise) => availableIds.has(exercise.id)),
   })));
   const missingMuscle = candidatesByMuscle.find((entry) => entry.exercises.length === 0);
-  if (missingMuscle) throw new Error(`No encontramos ejercicios para ${missingMuscle.muscle.name}.`);
+  if (missingMuscle) throw new Error(`No encontramos ejercicios para ${missingMuscle.muscle.name} compatibles con el equipo de ${location.name}.`);
   const targetCount = getDefaultExerciseCount(day);
   const selected: CatalogExercise[] = [];
   let candidateIndex = 0;
@@ -135,7 +139,7 @@ export async function startWorkout(db: SQLiteDatabase, ownerUserId: string, day:
       routine.id,
     );
   } else {
-    exercises = await getScheduleExercises(db, day);
+    exercises = await getScheduleExercises(db, ownerUserId, day);
   }
   if (exercises.length === 0) throw new Error('No hay ejercicios disponibles para el plan de hoy.');
 

@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import type { CatalogExercise, ExperienceLevel, MuscleGroup } from '@/domain/models';
+import type { CatalogExercise, EquipmentExerciseSummary, ExperienceLevel, MuscleGroup } from '@/domain/models';
 
 type ExerciseRow = {
   id: string;
@@ -75,4 +75,14 @@ export async function listMuscleGroups(db: SQLiteDatabase): Promise<MuscleGroup[
      ORDER BY CASE WHEN parent_id IS NULL THEN 0 ELSE 1 END, name`,
   );
   return rows.map((row) => ({ id: row.id, name: row.name, parentId: row.parent_id }));
+}
+
+export async function listExerciseSummaries(db: SQLiteDatabase): Promise<EquipmentExerciseSummary[]> {
+  return db.getAllAsync<EquipmentExerciseSummary>(
+    `SELECT exercise.id, exercise.name, muscle.name AS muscle
+     FROM exercise
+     JOIN muscle_group muscle ON muscle.id = exercise.primary_muscle_id
+     WHERE exercise.active = 1
+     ORDER BY muscle.name, exercise.name`,
+  );
 }

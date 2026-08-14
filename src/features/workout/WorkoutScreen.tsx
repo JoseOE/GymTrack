@@ -4,10 +4,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { Card, PrimaryButton, ProgressBar, Screen, ScreenHeader, SecondaryButton } from '@/components/ui';
-import { getScheduleForDate } from '@/constants/workoutSchedule';
+import { getDayMetadata } from '@/constants/workoutSchedule';
 import { colors, radii, spacing, typography } from '@/constants/theme';
 import { useFeedback } from '@/providers/FeedbackProvider';
 import { useGymTrack } from '@/providers/GymTrackProvider';
+import { getPlanForDate } from '@/services/weeklyPlanService';
 import { WorkoutCompletedState } from '@/features/workout/WorkoutCompletedState';
 import { WorkoutExerciseCard } from '@/features/workout/WorkoutExerciseCard';
 
@@ -23,11 +24,11 @@ function useElapsedMinutes(startedAt: string | null) {
 }
 
 export function WorkoutScreen() {
-  const { activeWorkout, addSet, beginWorkout, cancelActiveWorkout, completeWorkout, error, loading, pendingRoutine, refresh, removeSet, todayCompletedWorkout, updateSet } = useGymTrack();
+  const { activeWorkout, addSet, beginWorkout, cancelActiveWorkout, completeWorkout, error, loading, pendingRoutine, refresh, removeSet, todayCompletedWorkout, updateSet, weeklyPlan } = useGymTrack();
   const { confirm, showToast } = useFeedback();
   const [working, setWorking] = useState(false);
   const elapsed = useElapsedMinutes(activeWorkout?.startedAt ?? null);
-  const todaySchedule = getScheduleForDate(new Date());
+  const todaySchedule = weeklyPlan ? getPlanForDate(weeklyPlan, new Date()) : null;
 
   useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
 
@@ -60,12 +61,14 @@ export function WorkoutScreen() {
     const completed = sets.filter((set) => set.completed).length;
     return <Screen key={`active-${activeWorkout.id}`}><ScreenHeader title="Entrenar" subtitle={`${activeWorkout.sessionName} · ${elapsed} min`} /><View style={styles.summary}><Text style={styles.summaryText}>{completed} / {sets.length} series</Text><ProgressBar value={sets.length ? (completed / sets.length) * 100 : 0} /></View>{activeWorkout.exercises.length === 0 ? <Card style={styles.errorCard}><Ionicons color={colors.danger} name="alert-circle-outline" size={30} /><Text style={styles.emptyTitle}>La sesión activa no tiene ejercicios</Text><Text style={styles.emptyText}>Puedes cancelarla de forma segura y volver a iniciar.</Text></Card> : <View style={styles.list}>{activeWorkout.exercises.map((exercise, index) => <WorkoutExerciseCard exercise={exercise} index={index} key={exercise.id} onAddSet={() => handleAddSet(exercise.id)} onRemoveSet={handleRemoveSet} onUpdateSet={updateSet} />)}</View>}<PrimaryButton disabled={activeWorkout.exercises.length === 0} icon="checkmark-circle-outline" loading={working} title="Finalizar entrenamiento" onPress={requestFinish} /><SecondaryButton icon="close-circle-outline" title="Cancelar entrenamiento" tone="danger" onPress={requestCancel} /></Screen>;
   }
-  if (todayCompletedWorkout) return <WorkoutCompletedState onAdditional={requestAdditional} workout={todayCompletedWorkout} />;
+  if (todayCompletedWorkout && weeklyPlan) return <WorkoutCompletedState onAdditional={requestAdditional} weeklyPlan={weeklyPlan} workout={todayCompletedWorkout} />;
   if (error) return <Screen key="error"><ScreenHeader title="Entrenar" subtitle="No pudimos cargar tu estado" /><Card style={styles.errorCard}><Ionicons color={colors.danger} name="alert-circle-outline" size={34} /><Text style={styles.emptyTitle}>Ocurrió un problema</Text><Text style={styles.emptyText}>{error}</Text></Card><PrimaryButton icon="refresh" title="Reintentar" onPress={() => void refresh()} /></Screen>;
-  if (todaySchedule.isRest) return <Screen key="rest"><ScreenHeader title="Entrenar" subtitle={todaySchedule.dayName} /><Card style={styles.centerCard}><View style={styles.restIcon}><Ionicons color={colors.textMuted} name="moon-outline" size={38} /></View><Text style={styles.emptyTitle}>Día de descanso</Text><Text style={styles.emptyText}>Hoy toca recuperar. Tu próximo entrenamiento está en el plan semanal.</Text></Card></Screen>;
-  const plannedName = pendingRoutine?.name ?? todaySchedule.workoutName;
+  if (!todaySchedule) return <Screen key="missing-plan"><ScreenHeader title="Entrenar" subtitle="Plan semanal no disponible" /><PrimaryButton icon="refresh" title="Reintentar" onPress={() => void refresh()} /></Screen>;
+  const metadata = getDayMetadata(todaySchedule.dayIndex);
+  if (todaySchedule.sessionType === 'rest') return <Screen key="rest"><ScreenHeader title="Entrenar" subtitle={metadata.dayName} /><Card style={styles.centerCard}><View style={styles.restIcon}><Ionicons color={colors.textMuted} name="moon-outline" size={38} /></View><Text style={styles.emptyTitle}>Día de descanso</Text><Text style={styles.emptyText}>Hoy toca recuperar. Tu próximo entrenamiento está en el plan semanal.</Text></Card></Screen>;
+  const plannedName = pendingRoutine?.name ?? todaySchedule.displayName;
   const plannedMinutes = pendingRoutine?.estimatedMinutes ?? todaySchedule.estimatedMinutes;
-  return <Screen key="not-started"><ScreenHeader title="Entrenar" subtitle={`${todaySchedule.dayName} · ${pendingRoutine ? 'Rutina aceptada' : 'Plan de hoy'}`} /><Card style={styles.empty}><Text style={styles.planLabel}>{pendingRoutine ? 'RUTINA ACEPTADA' : todaySchedule.isOptional ? 'SESIÓN OPCIONAL' : 'ENTRENAMIENTO DE HOY'}</Text><Text style={styles.emptyTitle}>{plannedName}</Text><Text style={styles.emptyText}>{pendingRoutine ? `Usaremos los ${pendingRoutine.exerciseCount} ejercicios que guardaste en Coach.` : 'Crearemos una sesión coherente con estos músculos usando tu catálogo local.'}</Text>{plannedMinutes ? <Text style={styles.duration}>{plannedMinutes} min estimados</Text> : null}</Card><PrimaryButton loading={working} title={todaySchedule.isOptional && !pendingRoutine ? 'Iniciar cardio opcional' : 'Iniciar entrenamiento'} onPress={() => void start()} /></Screen>;
+  return <Screen key="not-started"><ScreenHeader title="Entrenar" subtitle={`${metadata.dayName} · ${pendingRoutine ? 'Rutina aceptada' : 'Tu plan de hoy'}`} /><Card style={styles.empty}><Text style={styles.planLabel}>{pendingRoutine ? 'RUTINA ACEPTADA' : todaySchedule.isOptional ? 'SESIÓN OPCIONAL' : 'ENTRENAMIENTO DE HOY'}</Text><Text style={styles.emptyTitle}>{plannedName}</Text><Text style={styles.emptyText}>{pendingRoutine ? `Usaremos los ${pendingRoutine.exerciseCount} ejercicios que guardaste en Coach.` : 'Crearemos una sesión coherente con estos músculos usando tu catálogo local.'}</Text>{plannedMinutes ? <Text style={styles.duration}>{plannedMinutes} min estimados</Text> : null}</Card><PrimaryButton loading={working} title={todaySchedule.isOptional && !pendingRoutine ? 'Iniciar sesión opcional' : 'Iniciar entrenamiento'} onPress={() => void start()} /></Screen>;
 }
 
 const styles = StyleSheet.create({

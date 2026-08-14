@@ -3,12 +3,14 @@ import { router } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { Card, PrimaryButton, Screen, ScreenHeader, SecondaryButton, SectionTitle } from '@/components/ui';
-import { getNextSchedule } from '@/constants/workoutSchedule';
+import { getDayMetadata } from '@/constants/workoutSchedule';
 import { colors, radii, spacing, typography } from '@/constants/theme';
-import type { RecentWorkout } from '@/domain/models';
+import type { RecentWorkout, WeeklyPlan } from '@/domain/models';
+import { getNextPlanDay } from '@/services/weeklyPlanService';
 
-export function WorkoutCompletedState({ workout, onAdditional }: { workout: RecentWorkout; onAdditional: () => void }) {
-  const next = getNextSchedule(new Date());
+export function WorkoutCompletedState({ workout, weeklyPlan, onAdditional }: { workout: RecentWorkout; weeklyPlan: WeeklyPlan; onAdditional: () => void }) {
+  const next = getNextPlanDay(weeklyPlan, new Date());
+  const nextMetadata = getDayMetadata(next.dayIndex);
   const completedTime = new Intl.DateTimeFormat('es-MX', { hour: 'numeric', minute: '2-digit' }).format(new Date(workout.completedAt));
   return (
     <Screen key="completed-today">
@@ -18,7 +20,7 @@ export function WorkoutCompletedState({ workout, onAdditional }: { workout: Rece
         <Text style={styles.workoutName}>{workout.title}</Text>
         <View style={styles.metrics}><Metric label="Duración" value={`${workout.durationMinutes} min`} /><Metric label="Ejercicios" value={String(workout.exerciseCount)} /><Metric label="Series" value={String(workout.setCount)} /><Metric label="Finalizado" value={completedTime} /></View>
       </Card>
-      <View style={styles.section}><SectionTitle>Próximo entrenamiento</SectionTitle><Card style={styles.nextCard}><View style={[styles.nextIcon, next.isRest && styles.restIcon]}><Ionicons color={next.isRest ? colors.textMuted : colors.primary} name={next.isRest ? 'moon-outline' : 'calendar-outline'} size={22} /></View><View style={styles.nextCopy}><Text style={styles.nextDay}>{next.dayName}</Text><Text style={[styles.nextWorkout, next.isRest && styles.restText]}>{next.workoutName}</Text>{next.estimatedMinutes ? <Text style={styles.nextDuration}>{next.estimatedMinutes} min{next.isOptional ? ' · opcional' : ''}</Text> : null}</View></Card></View>
+      <View style={styles.section}><SectionTitle>Próximo entrenamiento</SectionTitle><Card style={styles.nextCard}><View style={[styles.nextIcon, next.sessionType === 'rest' && styles.restIcon]}><Ionicons color={next.sessionType === 'rest' ? colors.textMuted : colors.primary} name={next.sessionType === 'rest' ? 'moon-outline' : 'calendar-outline'} size={22} /></View><View style={styles.nextCopy}><Text style={styles.nextDay}>{nextMetadata.dayName}</Text><Text style={[styles.nextWorkout, next.sessionType === 'rest' && styles.restText]}>{next.displayName}</Text>{next.estimatedMinutes ? <Text style={styles.nextDuration}>{next.estimatedMinutes} min{next.isOptional ? ' · opcional' : ''}</Text> : null}</View></Card></View>
       <PrimaryButton icon="stats-chart-outline" title="Ver progreso" onPress={() => router.push('/progress')} />
       <SecondaryButton icon="home-outline" title="Volver al inicio" onPress={() => router.push('/')} />
       <SecondaryButton icon="add-circle-outline" title="Entrenamiento adicional" onPress={onAdditional} />

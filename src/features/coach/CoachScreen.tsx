@@ -3,28 +3,35 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { Card, Chip, PrimaryButton, Screen, ScreenHeader, SecondaryButton, SectionTitle } from '@/components/ui';
 import { colors, spacing, typography } from '@/constants/theme';
-import { getScheduleForDate } from '@/constants/workoutSchedule';
 import type { RoutinePreview } from '@/domain/models';
 import { useFeedback } from '@/providers/FeedbackProvider';
 import { useGymTrack } from '@/providers/GymTrackProvider';
+import { getPlanForDate } from '@/services/weeklyPlanService';
 
-const muscles = ['Pecho', 'Espalda', 'Hombro', 'Cuádriceps', 'Femoral', 'Glúteo', 'Pantorrilla', 'Bíceps', 'Tríceps', 'Antebrazo', 'Abdomen', 'Cardio', 'Aductores', 'Abductores', 'Lumbar', 'Trapecio', 'Core'];
 const objectives = ['Ganar músculo', 'Ganar fuerza', 'Perder grasa'];
 const durations = ['30', '45', '60', '75'];
 const exerciseCounts = ['1', '2', '3', '4'];
 const limitations = ['Ninguna', 'Hombro', 'Rodilla', 'Espalda'];
 
 export function CoachScreen() {
-  const { acceptRoutine, previewRoutine } = useGymTrack();
+  const { loading, weeklyPlan } = useGymTrack();
+  if (!weeklyPlan) return <Screen><ScreenHeader title="Coach" subtitle={loading ? 'Cargando tu plan semanal…' : 'Plan semanal no disponible'} /></Screen>;
+  const defaultMuscles = getPlanForDate(weeklyPlan, new Date()).muscles.map((muscle) => muscle.name);
+  return <CoachForm defaultMuscles={defaultMuscles} key={weeklyPlan.updatedAt} />;
+}
+
+function CoachForm({ defaultMuscles }: { defaultMuscles: string[] }) {
+  const { acceptRoutine, muscleGroups, previewRoutine } = useGymTrack();
   const { showToast } = useFeedback();
   const [level, setLevel] = useState('Intermedio');
-  const [selectedMuscles, setSelectedMuscles] = useState<string[]>(() => [...getScheduleForDate(new Date()).muscles]);
+  const [selectedMuscles, setSelectedMuscles] = useState<string[]>(defaultMuscles);
   const [objective, setObjective] = useState('Ganar músculo');
   const [duration, setDuration] = useState('60');
   const [exerciseCount, setExerciseCount] = useState('2');
   const [limitation, setLimitation] = useState('Ninguna');
   const [preview, setPreview] = useState<RoutinePreview | null>(null);
   const [working, setWorking] = useState(false);
+  const muscles = muscleGroups.map((muscle) => muscle.name);
   const toggleMuscle = (muscle: string) => setSelectedMuscles((current) => current.includes(muscle) ? current.filter((item) => item !== muscle) : [...current, muscle]);
   const generate = async () => {
     if (selectedMuscles.length === 0) { showToast({ type: 'warning', title: 'Selecciona músculos', message: 'Elige al menos un grupo muscular.' }); return; }

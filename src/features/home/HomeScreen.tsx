@@ -4,28 +4,30 @@ import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { Card, IconButton, Metric, PrimaryButton, ProgressBar, Screen, ScreenHeader, SectionTitle } from '@/components/ui';
-import { getScheduleForDate } from '@/constants/workoutSchedule';
 import { colors, radii, spacing, typography } from '@/constants/theme';
 import { useFeedback } from '@/providers/FeedbackProvider';
 import { useGymTrack } from '@/providers/GymTrackProvider';
+import { getDefaultExerciseCount, getPlanForDate } from '@/services/weeklyPlanService';
 
 const dayOrder = [1, 2, 3, 4, 5, 6, 0];
 
 export function HomeScreen() {
-  const { activeWorkout, beginWorkout, loading, pendingRoutine, profile, todayCompletedWorkout, weeklyProgress } = useGymTrack();
+  const { activeWorkout, beginWorkout, loading, pendingRoutine, profile, todayCompletedWorkout, weeklyPlan, weeklyProgress } = useGymTrack();
   const { showToast } = useFeedback();
   const [starting, setStarting] = useState(false);
   const now = new Date();
-  const schedule = getScheduleForDate(now);
   const today = new Intl.DateTimeFormat('es-MX', { weekday: 'long', day: 'numeric', month: 'long' }).format(now);
-  const percentage = (weeklyProgress.completed / weeklyProgress.target) * 100;
-  const plannedName = pendingRoutine && !schedule.isRest ? pendingRoutine.name : schedule.workoutName;
-  const plannedMinutes = pendingRoutine && !schedule.isRest ? pendingRoutine.estimatedMinutes : schedule.estimatedMinutes;
-  const plannedExercises = pendingRoutine && !schedule.isRest ? pendingRoutine.exerciseCount : schedule.muscles.length;
+  if (!weeklyPlan) return <Screen><ScreenHeader title="GymTrack" subtitle={loading ? 'Cargando tu plan semanal…' : 'Plan semanal no disponible'} /></Screen>;
+  const schedule = getPlanForDate(weeklyPlan, now);
+  const isRest = schedule.sessionType === 'rest';
+  const percentage = weeklyProgress.target ? Math.min(100, Math.max(0, (weeklyProgress.completed / weeklyProgress.target) * 100)) : 0;
+  const plannedName = pendingRoutine && !isRest ? pendingRoutine.name : schedule.displayName;
+  const plannedMinutes = pendingRoutine && !isRest ? pendingRoutine.estimatedMinutes : schedule.estimatedMinutes;
+  const plannedExercises = pendingRoutine && !isRest ? pendingRoutine.exerciseCount : getDefaultExerciseCount(schedule);
 
   const handleWorkout = async () => {
     if (activeWorkout || todayCompletedWorkout) { router.push('/workout'); return; }
-    if (schedule.isRest) { router.push('/calendar'); return; }
+    if (isRest) { router.push('/calendar'); return; }
     setStarting(true);
     try { await beginWorkout(); router.push('/workout'); }
     catch (reason) { showToast({ type: 'error', title: 'No se pudo iniciar', message: reason instanceof Error ? reason.message : 'Inténtalo nuevamente.' }); }
@@ -33,10 +35,10 @@ export function HomeScreen() {
   };
 
   const heroName = activeWorkout?.sessionName ?? (todayCompletedWorkout ? 'Entrenamiento completado' : plannedName);
-  const eyebrow = activeWorkout ? 'SESIÓN ACTIVA' : todayCompletedWorkout ? 'OBJETIVO DE HOY COMPLETADO' : schedule.isRest ? 'PLAN DE HOY' : pendingRoutine ? 'RUTINA ACEPTADA' : schedule.isOptional ? 'CARDIO OPCIONAL' : 'ENTRENAMIENTO DE HOY';
-  const description = activeWorkout ? 'Guardado automáticamente en este dispositivo' : todayCompletedWorkout ? todayCompletedWorkout.title : schedule.isRest ? 'Recuperación y descanso' : pendingRoutine ? 'Guardada desde Coach' : `${schedule.dayName} · Plan semanal`;
-  const primaryTitle = activeWorkout ? 'Continuar entrenamiento' : todayCompletedWorkout ? 'Ver resumen de hoy' : schedule.isRest ? 'Ver plan semanal' : schedule.isOptional ? 'Iniciar cardio opcional' : 'Iniciar entrenamiento';
-  const primaryIcon = schedule.isRest && !activeWorkout && !todayCompletedWorkout ? 'calendar-outline' : todayCompletedWorkout ? 'checkmark-circle-outline' : 'play';
+  const eyebrow = activeWorkout ? 'SESIÓN ACTIVA' : todayCompletedWorkout ? 'OBJETIVO DE HOY COMPLETADO' : isRest ? 'PLAN DE HOY' : pendingRoutine ? 'RUTINA ACEPTADA' : schedule.isOptional ? 'SESIÓN OPCIONAL' : 'ENTRENAMIENTO DE HOY';
+  const description = activeWorkout ? 'Guardado automáticamente en este dispositivo' : todayCompletedWorkout ? todayCompletedWorkout.title : isRest ? 'Recuperación y descanso' : pendingRoutine ? 'Guardada desde Coach' : 'Plan semanal personalizado';
+  const primaryTitle = activeWorkout ? 'Continuar entrenamiento' : todayCompletedWorkout ? 'Ver resumen de hoy' : isRest ? 'Ver plan semanal' : schedule.isOptional ? 'Iniciar sesión opcional' : 'Iniciar entrenamiento';
+  const primaryIcon = isRest && !activeWorkout && !todayCompletedWorkout ? 'calendar-outline' : todayCompletedWorkout ? 'checkmark-circle-outline' : 'play';
 
   return (
     <Screen>

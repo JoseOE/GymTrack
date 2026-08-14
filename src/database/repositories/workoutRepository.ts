@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import { listExercisesForMuscles } from '@/database/repositories/catalogRepository';
+import { listExercisesForMuscleIds } from '@/database/repositories/catalogRepository';
 import type { ActiveWorkout, CatalogExercise, RecentWorkout, RemoveWorkoutSetResult, WeeklyPlanDay, WorkoutExercise, WorkoutSet } from '@/domain/models';
 import { getDefaultExerciseCount } from '@/services/weeklyPlanService';
 import { createId } from '@/utils/id';
@@ -85,21 +85,20 @@ export async function getActiveWorkout(db: SQLiteDatabase, ownerUserId: string):
   };
 }
 
-function matchesScheduleMuscle(primaryMuscle: string, scheduleMuscle: string) {
-  return primaryMuscle === scheduleMuscle || (scheduleMuscle === 'Hombro' && primaryMuscle.startsWith('Deltoide'));
-}
-
 async function getScheduleExercises(db: SQLiteDatabase, day: WeeklyPlanDay) {
-  const muscleNames = day.muscles.map((muscle) => muscle.name);
-  const catalog = await listExercisesForMuscles(db, muscleNames);
+  const candidatesByMuscle = await Promise.all(day.muscles.map(async (muscle) => ({
+    muscle,
+    exercises: await listExercisesForMuscleIds(db, [muscle.id]),
+  })));
+  const missingMuscle = candidatesByMuscle.find((entry) => entry.exercises.length === 0);
+  if (missingMuscle) throw new Error(`No encontramos ejercicios para ${missingMuscle.muscle.name}.`);
   const targetCount = getDefaultExerciseCount(day);
   const selected: CatalogExercise[] = [];
   let candidateIndex = 0;
   while (selected.length < targetCount) {
     let added = false;
-    for (const muscle of muscleNames) {
-      const candidates = catalog.filter((exercise) => matchesScheduleMuscle(exercise.primaryMuscle, muscle));
-      const candidate = candidates[candidateIndex];
+    for (const entry of candidatesByMuscle) {
+      const candidate = entry.exercises[candidateIndex];
       if (candidate && !selected.some((exercise) => exercise.id === candidate.id)) {
         selected.push(candidate);
         added = true;
@@ -112,13 +111,19 @@ async function getScheduleExercises(db: SQLiteDatabase, day: WeeklyPlanDay) {
   return selected.map((exercise, orderIndex) => ({ exercise_id: exercise.id, order_index: orderIndex, target_sets: exercise.exerciseType === 'cardio' ? 1 : 3 }));
 }
 
+function isValidWorkout(workout: ActiveWorkout | null) {
+  return Boolean(workout && workout.exercises.length > 0 && workout.exercises.every((exercise) => exercise.sets.length > 0));
+}
+
 export async function startWorkout(db: SQLiteDatabase, ownerUserId: string, day: WeeklyPlanDay, isAdditional = false) {
   const active = await getActiveWorkout(db, ownerUserId);
-  if (active) return active;
+  if (active && isValidWorkout(active)) return active;
+  if (active) await cancelWorkout(db, ownerUserId, active.id);
 
   const routine = await db.getFirstAsync<{ id: string; name: string }>(
     `SELECT r.id, r.name FROM routine r
      WHERE r.owner_user_id = ?
+       AND EXISTS (SELECT 1 FROM routine_exercise re WHERE re.routine_id = r.id)
        AND NOT EXISTS (SELECT 1 FROM workout_session ws WHERE ws.routine_id = r.id)
      ORDER BY r.updated_at DESC LIMIT 1`,
     ownerUserId,
@@ -137,6 +142,7 @@ export async function startWorkout(db: SQLiteDatabase, ownerUserId: string, day:
   const sessionId = createId('workout');
   const now = new Date().toISOString();
   const sessionName = routine?.name ?? day.displayName;
+  const expectedSetCount = exercises.reduce((count, exercise) => count + exercise.target_sets, 0);
   await db.withExclusiveTransactionAsync(async (transaction) => {
     await transaction.runAsync(
       `INSERT INTO workout_session
@@ -172,8 +178,25 @@ export async function startWorkout(db: SQLiteDatabase, ownerUserId: string, day:
         );
       }
     }
+    const shape = await transaction.getFirstAsync<{ exercise_count: number; set_count: number }>(
+      `SELECT COUNT(DISTINCT we.id) AS exercise_count, COUNT(sets.id) AS set_count
+       FROM workout_session ws
+       LEFT JOIN workout_exercise we ON we.workout_session_id = ws.id
+       LEFT JOIN workout_set sets ON sets.workout_exercise_id = we.id
+       WHERE ws.id = ? AND ws.owner_user_id = ? AND ws.status = 'active'`,
+      sessionId,
+      ownerUserId,
+    );
+    if (!shape || shape.exercise_count !== exercises.length || shape.set_count !== expectedSetCount || shape.exercise_count === 0 || shape.set_count === 0) {
+      throw new Error('No se pudo construir una sesión completa para el plan de hoy.');
+    }
   });
-  return getActiveWorkout(db, ownerUserId);
+  const created = await getActiveWorkout(db, ownerUserId);
+  if (!created || !isValidWorkout(created) || created.id !== sessionId) {
+    if (created?.id === sessionId) await cancelWorkout(db, ownerUserId, sessionId);
+    throw new Error('La sesión no quedó lista para comenzar. Inténtalo nuevamente.');
+  }
+  return created;
 }
 
 export async function saveWorkoutSet(db: SQLiteDatabase, ownerUserId: string, set: WorkoutSet) {

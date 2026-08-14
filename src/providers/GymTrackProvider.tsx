@@ -235,6 +235,8 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
     beginWorkout: async (options) => {
       const userId = requireUserId();
       if (!weeklyPlan) throw new Error('No se encontró un plan semanal activo.');
+      if (weeklyPlan.userProfileId !== userId) throw new Error('Tu plan semanal todavía se está preparando.');
+      if (weeklyPlan.days.length !== 7) throw new Error('Tu plan semanal debe contener exactamente 7 días.');
       const todayPlan = getPlanForDate(weeklyPlan, new Date());
       const isAdditional = options?.allowRest === true;
       if (todayPlan.sessionType === 'rest' && !isAdditional) throw new Error('Hoy es día de descanso.');
@@ -242,9 +244,11 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
       const sessionPlan = todayPlan.sessionType === 'rest' && isAdditional
         ? { ...todayPlan, sessionType: 'cardio' as const, displayName: 'Entrenamiento adicional', estimatedMinutes: 30, isOptional: true, countsTowardGoal: false, muscles: cardio ? [{ ...cardio, orderIndex: 0 }] : [] }
         : todayPlan;
-      if (sessionPlan.muscles.length === 0) throw new Error('No hay músculos configurados para esta sesión.');
+      if (sessionPlan.muscles.length === 0) throw new Error('Tu plan de hoy no tiene músculos configurados.');
+      const catalogMuscleIds = new Set(muscleGroups.map((muscle) => muscle.id));
+      const missingMuscle = sessionPlan.muscles.find((muscle) => !catalogMuscleIds.has(muscle.id));
+      if (missingMuscle) throw new Error(`El músculo ${missingMuscle.name} ya no está disponible en el catálogo.`);
       const workout = await startWorkout(db, userId, sessionPlan, isAdditional);
-      if (!workout) throw new Error('No se pudo iniciar el entrenamiento.');
       setActiveWorkout(workout);
       setPendingRoutine(null);
       return workout;

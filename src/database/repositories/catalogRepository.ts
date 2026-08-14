@@ -5,6 +5,7 @@ import type { CatalogExercise, ExperienceLevel, MuscleGroup } from '@/domain/mod
 type ExerciseRow = {
   id: string;
   name: string;
+  primary_muscle_id: string;
   primary_muscle: string;
   exercise_family: string;
   movement_pattern: string;
@@ -19,6 +20,7 @@ function mapExercise(row: ExerciseRow): CatalogExercise {
   return {
     id: row.id,
     name: row.name,
+    primaryMuscleId: row.primary_muscle_id,
     primaryMuscle: row.primary_muscle,
     exerciseFamily: row.exercise_family,
     movementPattern: row.movement_pattern,
@@ -30,20 +32,33 @@ function mapExercise(row: ExerciseRow): CatalogExercise {
   };
 }
 
-const exerciseSelect = `SELECT e.id, e.name, m.name AS primary_muscle, e.exercise_family,
+const exerciseSelect = `SELECT e.id, e.name, e.primary_muscle_id, m.name AS primary_muscle, e.exercise_family,
   e.movement_pattern, e.exercise_type, e.difficulty, e.unilateral, e.estimated_minutes, e.tags
   FROM exercise e JOIN muscle_group m ON m.id = e.primary_muscle_id`;
+
+export async function listExercisesForMuscleIds(db: SQLiteDatabase, muscleIds: string[]) {
+  if (muscleIds.length === 0) return [];
+  const placeholders = muscleIds.map(() => '?').join(', ');
+  const rows = await db.getAllAsync<ExerciseRow>(
+    `${exerciseSelect} WHERE e.active = 1 AND (
+      e.primary_muscle_id IN (${placeholders})
+      OR e.primary_muscle_id IN (
+        SELECT id FROM muscle_group WHERE parent_id IN (${placeholders})
+      )
+    ) ORDER BY m.name, e.name`,
+    [...muscleIds, ...muscleIds],
+  );
+  return rows.map(mapExercise);
+}
 
 export async function listExercisesForMuscles(db: SQLiteDatabase, muscles: string[]) {
   if (muscles.length === 0) return [];
   const placeholders = muscles.map(() => '?').join(', ');
-  const rows = await db.getAllAsync<ExerciseRow>(
-    `${exerciseSelect} WHERE e.active = 1 AND (m.name IN (${placeholders}) OR m.parent_id IN (
-      SELECT id FROM muscle_group WHERE name IN (${placeholders})
-    )) ORDER BY m.name, e.name`,
-    [...muscles, ...muscles],
+  const groups = await db.getAllAsync<{ id: string }>(
+    `SELECT id FROM muscle_group WHERE name IN (${placeholders}) ORDER BY name`,
+    muscles,
   );
-  return rows.map(mapExercise);
+  return listExercisesForMuscleIds(db, groups.map((group) => group.id));
 }
 
 export async function getExercisesByNames(db: SQLiteDatabase, names: string[]) {

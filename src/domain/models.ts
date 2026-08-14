@@ -70,6 +70,7 @@ export type WeeklyPlanDraft = {
 export type CatalogExercise = {
   id: string;
   name: string;
+  primaryMuscleId: string;
   primaryMuscle: string;
   exerciseFamily: string;
   movementPattern: string;

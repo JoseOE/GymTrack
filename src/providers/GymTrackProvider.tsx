@@ -16,10 +16,10 @@ import {
 } from '@/database/repositories/workoutRepository';
 import type {
   ActiveWorkout, MuscleGroup, OnboardingProfileInput, PendingRoutineSummary, RecentWorkout, RemoveWorkoutSetResult,
-  RoutinePreview, TrainingLocation, UserProfile, WeeklyPlan, WeeklyPlanDraft, WeeklyProgress, WorkoutSet,
+  RoutinePreview, RoutineRequest, TrainingLocation, UserProfile, WeeklyPlan, WeeklyPlanDraft, WeeklyProgress, WorkoutSet,
 } from '@/domain/models';
 import { useAuth } from '@/providers/AuthProvider';
-import { generateRoutinePreview, type RoutineRequest, saveRoutine } from '@/services/gymTrackService';
+import { generateRoutinePreview, replaceRoutinePreviewExercise, saveRoutine } from '@/services/gymTrackService';
 import { getPlanForDate, getWeeklyTarget } from '@/services/weeklyPlanService';
 
 type CompletedSnapshot = { completed_at: string; counts_toward_goal: number };
@@ -58,6 +58,7 @@ type GymTrackContextValue = {
   completeWorkout: (sessionId: string) => Promise<void>;
   cancelActiveWorkout: (sessionId: string) => Promise<void>;
   previewRoutine: (request: RoutineRequest) => Promise<RoutinePreview>;
+  replacePreviewExercise: (preview: RoutinePreview, exerciseIndex: number, recentlyReplacedExerciseIds?: string[]) => Promise<RoutinePreview>;
   acceptRoutine: (preview: RoutinePreview) => Promise<string>;
 };
 
@@ -307,6 +308,7 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
     completeWorkout: async (sessionId) => { await finishWorkout(db, requireUserId(), sessionId); await refresh(); },
     cancelActiveWorkout: async (sessionId) => { await cancelWorkout(db, requireUserId(), sessionId); await refresh(); },
     previewRoutine: (request) => generateRoutinePreview(db, requireUserId(), request),
+    replacePreviewExercise: (preview, exerciseIndex, recentlyReplacedExerciseIds) => replaceRoutinePreviewExercise(db, requireUserId(), preview, exerciseIndex, recentlyReplacedExerciseIds),
     acceptRoutine: async (preview) => {
       const userId = requireUserId();
       const routineId = await saveRoutine(db, userId, preview);

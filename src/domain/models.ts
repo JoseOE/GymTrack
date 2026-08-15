@@ -181,15 +181,33 @@ export type RoutinePreviewExercise = {
   exerciseId: string;
   name: string;
   muscle: string;
+  targetMuscleId: string;
+  targetMuscleName: string;
+  exerciseFamily: string;
+  exerciseType: CatalogExercise['exerciseType'];
+  difficulty: ExperienceLevel;
   estimatedMinutes: number;
+};
+
+export type MuscleExerciseTarget = {
+  muscleId: string;
+  muscleName: string;
+  exerciseCount: number;
+};
+
+export type RoutineRequest = {
+  muscleTargets: MuscleExerciseTarget[];
+  targetDurationMinutes: number;
 };
 
 export type RoutinePreview = {
   name: string;
-  estimatedMinutes: number;
+  targetDurationMinutes: number;
+  estimatedDurationMinutes: number;
   exercises: RoutinePreviewExercise[];
+  locationId: string;
   locationName: string;
-  availabilityMessage: string | null;
+  availabilityMessages: string[];
 };
 
 export type PendingRoutineSummary = {

@@ -16,7 +16,7 @@ export async function saveRoutine(db: SQLiteDatabase, ownerUserId: string, previ
       'INSERT INTO routine (id, name, estimated_minutes, created_at, updated_at, owner_user_id) VALUES (?, ?, ?, ?, ?, ?)',
       routineId,
       preview.name,
-      preview.estimatedMinutes,
+      preview.estimatedDurationMinutes,
       now,
       now,
       ownerUserId,

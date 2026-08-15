@@ -4,7 +4,7 @@
     "slug": "GymTrack",
     "version": "0.1.1",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/gymtrack-icon.png",
     "scheme": "gymtrack",
     "userInterfaceStyle": "dark",
     "ios": {
@@ -13,11 +13,11 @@
     "android": {
       "package": "com.joseoe.gymtrack",
       "adaptiveIcon": {
-        "backgroundColor": "#000000",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
-      },
+  "backgroundColor": "#000000",
+  "foregroundImage": "./assets/images/gymtrack-adaptive-foreground.png",
+  "backgroundImage": "./assets/images/gymtrack-adaptive-background.png",
+  "monochromeImage": "./assets/images/gymtrack-monochrome.png"
+    },
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -30,7 +30,7 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#000000",
-          "image": "./assets/images/icon.png",
+          "image": "./assets/images/gymtrack-icon.png",
           "imageWidth": 120
         }
       ],

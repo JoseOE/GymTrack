@@ -7,23 +7,26 @@
     "icon": "./assets/images/gymtrack-icon.png",
     "scheme": "gymtrack",
     "userInterfaceStyle": "dark",
+
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/gymtrack-icon.png"
     },
+
     "android": {
       "package": "com.joseoe.gymtrack",
       "adaptiveIcon": {
-  "backgroundColor": "#000000",
-  "foregroundImage": "./assets/images/gymtrack-adaptive-foreground.png",
-  "backgroundImage": "./assets/images/gymtrack-adaptive-background.png",
-  "monochromeImage": "./assets/images/gymtrack-monochrome.png"
-    },
+        "backgroundColor": "#000000",
+        "foregroundImage": "./assets/images/gymtrack-adaptive-foreground.png",
+        "monochromeImage": "./assets/images/gymtrack-monochrome.png"
+      },
       "predictiveBackGestureEnabled": false
     },
+
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
+
     "plugins": [
       "expo-router",
       [
@@ -43,16 +46,19 @@
         }
       ]
     ],
+
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
+
     "extra": {
       "router": {},
       "eas": {
         "projectId": "97662ec9-50ab-4587-befc-653dc8e352ca"
       }
     },
+
     "owner": "chemant"
   }
 }

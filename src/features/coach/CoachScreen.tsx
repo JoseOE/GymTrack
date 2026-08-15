@@ -15,6 +15,10 @@ import {
   describeDurationDifference, formatDuration, MAX_ROUTINE_DURATION_MINUTES, MIN_ROUTINE_DURATION_MINUTES,
   ROUTINE_DURATION_STEP_MINUTES,
 } from '@/utils/duration';
+import {
+  CARDIO_DURATION_STEP_MINUTES, DEFAULT_CARDIO_DURATION_MINUTES, MAX_CARDIO_DURATION_MINUTES,
+  MIN_CARDIO_DURATION_MINUTES,
+} from '@/utils/cardioTimer';
 
 const objectives = ['Ganar músculo', 'Ganar fuerza', 'Perder grasa'];
 const durationPresets = [30, 45, 60, 75, 90, 120, 150];
@@ -33,6 +37,7 @@ function CoachForm({ defaultMuscles }: { defaultMuscles: WeeklyPlanMuscle[] }) {
   const [level, setLevel] = useState('Intermedio');
   const [selectedMuscleIds, setSelectedMuscleIds] = useState<string[]>(defaultMuscles.map((muscle) => muscle.id));
   const [exerciseCounts, setExerciseCounts] = useState<Record<string, number>>(() => Object.fromEntries(defaultMuscles.map((muscle) => [muscle.id, 2])));
+  const [cardioDurationMinutes, setCardioDurationMinutes] = useState(DEFAULT_CARDIO_DURATION_MINUTES);
   const [objective, setObjective] = useState('Ganar músculo');
   const [targetDurationMinutes, setTargetDurationMinutes] = useState(60);
   const [customDuration, setCustomDuration] = useState(false);
@@ -53,15 +58,21 @@ function CoachForm({ defaultMuscles }: { defaultMuscles: WeeklyPlanMuscle[] }) {
   const changeExerciseCount = (muscleId: string, delta: number) => {
     setExerciseCounts((current) => ({ ...current, [muscleId]: Math.min(6, Math.max(1, (current[muscleId] ?? 2) + delta)) }));
   };
-  const muscleTargets: MuscleExerciseTarget[] = selectedMuscleIds.flatMap((muscleId) => {
+  const cardioSelected = selectedMuscleIds.includes('cardio');
+  const muscleTargets: MuscleExerciseTarget[] = selectedMuscleIds.filter((muscleId) => muscleId !== 'cardio').flatMap((muscleId) => {
     const muscle = muscleGroups.find((item) => item.id === muscleId);
     return muscle ? [{ muscleId, muscleName: muscle.name, exerciseCount: exerciseCounts[muscleId] ?? 2 }] : [];
   });
-  const requestedExerciseCount = muscleTargets.reduce((total, target) => total + target.exerciseCount, 0);
-  const buildRequest = (): RoutineRequest => ({ muscleTargets, targetDurationMinutes });
+  const requestedStrengthCount = muscleTargets.reduce((total, target) => total + target.exerciseCount, 0);
+  const requestedExerciseCount = requestedStrengthCount + (cardioSelected ? 1 : 0);
+  const buildRequest = (): RoutineRequest => ({
+    muscleTargets,
+    cardioTarget: cardioSelected ? { durationMinutes: cardioDurationMinutes } : undefined,
+    targetDurationMinutes,
+  });
 
   const generate = async (request: RoutineRequest) => {
-    if (request.muscleTargets.length === 0) {
+    if (request.muscleTargets.length === 0 && !request.cardioTarget) {
       showToast({ type: 'warning', title: 'Selecciona músculos', message: 'Elige al menos un grupo muscular.' });
       return;
     }
@@ -109,7 +120,7 @@ function CoachForm({ defaultMuscles }: { defaultMuscles: WeeklyPlanMuscle[] }) {
   const sharePreview = () => {
     if (!preview) return;
     try {
-      setSharePayload(encodeSharedRoutine({ name: preview.name, exerciseIds: preview.exercises.map((exercise) => exercise.exerciseId) }));
+      setSharePayload(encodeSharedRoutine({ name: preview.name, exercises: preview.exercises }));
     } catch (reason) {
       showToast({ type: 'warning', title: 'No se pudo compartir', message: reason instanceof Error ? reason.message : 'Esta rutina no se puede convertir en QR.' });
     }
@@ -129,14 +140,14 @@ function CoachForm({ defaultMuscles }: { defaultMuscles: WeeklyPlanMuscle[] }) {
     <View style={styles.section}>
       <SectionTitle>Músculos a entrenar</SectionTitle>
       <View style={styles.chips}>{muscleGroups.map((muscle) => <Chip key={muscle.id} label={muscle.name} selected={selectedMuscleIds.includes(muscle.id)} onPress={() => toggleMuscle(muscle.id)} />)}</View>
-      <View style={styles.targetList}>{muscleTargets.map((target) => <Stepper key={target.muscleId} label={target.muscleName} value={String(target.exerciseCount)} decrementDisabled={target.exerciseCount <= 1} incrementDisabled={target.exerciseCount >= 6} onDecrement={() => changeExerciseCount(target.muscleId, -1)} onIncrement={() => changeExerciseCount(target.muscleId, 1)} />)}</View>
+      <View style={styles.targetList}>{muscleTargets.map((target) => <Stepper key={target.muscleId} label={target.muscleName} value={String(target.exerciseCount)} decrementDisabled={target.exerciseCount <= 1} incrementDisabled={target.exerciseCount >= 6} onDecrement={() => changeExerciseCount(target.muscleId, -1)} onIncrement={() => changeExerciseCount(target.muscleId, 1)} />)}{cardioSelected ? <Stepper label="Cardio · Duración" value={formatDuration(cardioDurationMinutes)} decrementDisabled={cardioDurationMinutes <= MIN_CARDIO_DURATION_MINUTES} incrementDisabled={cardioDurationMinutes >= MAX_CARDIO_DURATION_MINUTES} onDecrement={() => setCardioDurationMinutes((current) => Math.max(MIN_CARDIO_DURATION_MINUTES, current - CARDIO_DURATION_STEP_MINUTES))} onIncrement={() => setCardioDurationMinutes((current) => Math.min(MAX_CARDIO_DURATION_MINUTES, current + CARDIO_DURATION_STEP_MINUTES))} /> : null}</View>
     </View>
-    <Card style={styles.summary}><Text style={styles.summaryValue}>{requestedExerciseCount} ejercicios solicitados</Text><Text style={styles.summaryLabel}>Objetivo · {formatDuration(targetDurationMinutes)}</Text></Card>
+    <Card style={styles.summary}><Text style={styles.summaryValue}>{requestedExerciseCount} ejercicios solicitados</Text>{cardioSelected ? <Text style={styles.summaryLabel}>{requestedStrengthCount} de fuerza · Cardio {formatDuration(cardioDurationMinutes)}</Text> : null}<Text style={styles.summaryLabel}>Objetivo total · {formatDuration(targetDurationMinutes)}</Text></Card>
     <ChoiceField title="Lesiones o limitaciones" options={limitations} value={limitation} onChange={setLimitation} />
     {limitation !== 'Ninguna' ? <Text style={styles.warning}>La limitación queda seleccionada localmente, pero esta versión provisional todavía no evalúa seguridad clínica.</Text> : null}
     {preview ? <Card style={styles.preview}>
       <View><Text style={styles.previewTitle}>{preview.name}</Text><Text style={styles.previewMeta}>{preview.exercises.length} ejercicios · {preview.locationName}</Text><Text style={styles.previewDetail}>Objetivo · {formatDuration(preview.targetDurationMinutes)}</Text><Text style={styles.previewDetail}>Estimación · ≈ {formatDuration(preview.estimatedDurationMinutes)}</Text><Text style={styles.durationMessage}>{describeDurationDifference(preview.targetDurationMinutes, preview.estimatedDurationMinutes)}</Text>{preview.availabilityMessages.map((message) => <Text key={message} style={styles.warning}>{message}</Text>)}</View>
-      {preview.exercises.map((exercise, index) => <View key={`${index}-${exercise.exerciseId}`} style={styles.previewRow}><Text style={styles.previewNumber}>{index + 1}</Text><View style={styles.previewCopy}><Text style={styles.exerciseName}>{exercise.name}</Text><Text style={styles.exerciseMuscle}>{exercise.targetMuscleName}</Text></View><Pressable accessibilityLabel={`Cambiar ${exercise.name}`} accessibilityRole="button" disabled={replacingIndex !== null || working} onPress={() => void replaceExercise(index)} style={({ pressed }) => [styles.changeButton, pressed && styles.pressed, (replacingIndex !== null || working) && styles.disabled]}>{replacingIndex === index ? <ActivityIndicator color={colors.primary} size="small" /> : <Ionicons color={colors.primary} name="refresh" size={18} />}<Text style={styles.changeText}>Cambiar</Text></Pressable></View>)}
+      {preview.exercises.map((exercise, index) => <View key={`${index}-${exercise.exerciseId}`} style={styles.previewRow}><Text style={styles.previewNumber}>{index + 1}</Text><View style={styles.previewCopy}><Text style={styles.exerciseName}>{exercise.name}</Text><Text style={styles.exerciseMuscle}>{exercise.targetMuscleName}{exercise.mode === 'cardio' ? ` · ${formatDuration(exercise.targetDurationMinutes ?? exercise.estimatedMinutes)}` : ''}</Text></View><Pressable accessibilityLabel={`Cambiar ${exercise.name}`} accessibilityRole="button" disabled={replacingIndex !== null || working} onPress={() => void replaceExercise(index)} style={({ pressed }) => [styles.changeButton, pressed && styles.pressed, (replacingIndex !== null || working) && styles.disabled]}>{replacingIndex === index ? <ActivityIndicator color={colors.primary} size="small" /> : <Ionicons color={colors.primary} name="refresh" size={18} />}<Text style={styles.changeText}>Cambiar</Text></Pressable></View>)}
       <View style={styles.actions}><View style={styles.flex}><SecondaryButton disabled={replacingIndex !== null} title="Cancelar" onPress={() => setPreview(null)} /></View><View style={styles.flex}><SecondaryButton disabled={replacingIndex !== null} icon="refresh" title="Regenerar toda" loading={working} onPress={() => void generate(previewRequest ?? buildRequest())} /></View></View>
       <SecondaryButton disabled={replacingIndex !== null || working} icon="qr-code-outline" title="Compartir QR" onPress={sharePreview} />
       <PrimaryButton disabled={replacingIndex !== null} icon="save-outline" loading={working} title="Aceptar y guardar" onPress={() => void accept()} />

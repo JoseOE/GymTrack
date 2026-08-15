@@ -1,7 +1,55 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import type { PendingRoutineSummary, RoutinePreview } from '@/domain/models';
+import { estimatePersistedRoutineDuration, type PersistedRoutinePrescription } from '@/utils/duration';
 import { createId } from '@/utils/id';
+
+type PersistedRoutineRow = {
+  exercise_type: 'compound' | 'isolation' | 'cardio';
+  estimated_minutes: number;
+  exercise_mode: 'strength' | 'cardio';
+  target_duration_minutes: number | null;
+  target_sets: number;
+  min_reps: number;
+  max_reps: number;
+  rest_seconds: number;
+};
+
+export async function recalculateRoutineEstimatedMinutes(db: SQLiteDatabase, ownerUserId: string, routineId: string) {
+  const rows = await db.getAllAsync<PersistedRoutineRow>(
+    `SELECT e.exercise_type, e.estimated_minutes, re.exercise_mode, re.target_duration_minutes,
+      re.target_sets, re.min_reps, re.max_reps, re.rest_seconds
+     FROM routine_exercise re
+     JOIN routine r ON r.id = re.routine_id
+     JOIN exercise e ON e.id = re.exercise_id
+     WHERE re.routine_id = ? AND r.owner_user_id = ?
+     ORDER BY re.order_index`,
+    routineId,
+    ownerUserId,
+  );
+  if (rows.length === 0) throw new Error('La rutina ya no contiene ejercicios válidos.');
+  const prescriptions: PersistedRoutinePrescription[] = rows.map((row) => ({
+    exerciseType: row.exercise_type,
+    catalogEstimatedMinutes: row.estimated_minutes,
+    mode: row.exercise_mode,
+    targetDurationMinutes: row.target_duration_minutes,
+    targetSets: row.target_sets,
+    minReps: row.min_reps,
+    maxReps: row.max_reps,
+    restSeconds: row.rest_seconds,
+  }));
+  const estimatedMinutes = estimatePersistedRoutineDuration(prescriptions);
+  await db.runAsync(
+    `UPDATE routine SET estimated_minutes = ?, updated_at = ?
+     WHERE id = ? AND owner_user_id = ? AND estimated_minutes <> ?`,
+    estimatedMinutes,
+    new Date().toISOString(),
+    routineId,
+    ownerUserId,
+    estimatedMinutes,
+  );
+  return estimatedMinutes;
+}
 
 export async function saveRoutine(db: SQLiteDatabase, ownerUserId: string, preview: RoutinePreview) {
   const routineId = createId('routine');
@@ -23,13 +71,20 @@ export async function saveRoutine(db: SQLiteDatabase, ownerUserId: string, previ
     );
     for (const [index, exercise] of preview.exercises.entries()) {
       await transaction.runAsync(
-        `INSERT INTO routine_exercise
-          (id, routine_id, exercise_id, order_index, target_sets, min_reps, max_reps, rest_seconds)
-         VALUES (?, ?, ?, ?, 3, 8, 12, 90)`,
+         `INSERT INTO routine_exercise
+          (id, routine_id, exercise_id, order_index, target_sets, min_reps, max_reps, rest_seconds,
+           exercise_mode, target_duration_minutes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         createId('routine-exercise'),
         routineId,
         exercise.exerciseId,
         index,
+        exercise.mode === 'cardio' ? 0 : 3,
+        exercise.mode === 'cardio' ? 0 : 8,
+        exercise.mode === 'cardio' ? 0 : 12,
+        exercise.mode === 'cardio' ? 0 : 90,
+        exercise.mode,
+        exercise.targetDurationMinutes,
       );
     }
   });
@@ -48,5 +103,7 @@ export async function getPendingRoutineSummary(db: SQLiteDatabase, ownerUserId: 
      LIMIT 1`,
     ownerUserId,
   );
-  return row ? { id: row.id, name: row.name, estimatedMinutes: row.estimated_minutes, exerciseCount: row.exercise_count } : null;
+  if (!row) return null;
+  const estimatedMinutes = await recalculateRoutineEstimatedMinutes(db, ownerUserId, row.id);
+  return { id: row.id, name: row.name, estimatedMinutes, exerciseCount: row.exercise_count };
 }

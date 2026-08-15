@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, AppState, StyleSheet, Text, View } from 'react-native';
 
 import { Card, PrimaryButton, ProgressBar, Screen, ScreenHeader, SecondaryButton } from '@/components/ui';
 import { getDayMetadata } from '@/constants/workoutSchedule';
@@ -11,6 +11,10 @@ import { useGymTrack } from '@/providers/GymTrackProvider';
 import { getPlanForDate } from '@/services/weeklyPlanService';
 import { WorkoutCompletedState } from '@/features/workout/WorkoutCompletedState';
 import { WorkoutExerciseCard } from '@/features/workout/WorkoutExerciseCard';
+import { CardioWorkoutCard } from '@/features/workout/CardioWorkoutCard';
+import type { WorkoutExercise } from '@/domain/models';
+import { formatDuration } from '@/utils/duration';
+import { getCardioElapsedSeconds } from '@/utils/cardioTimer';
 
 function useElapsedMinutes(startedAt: string | null) {
   const [now, setNow] = useState(() => Date.now());
@@ -24,16 +28,41 @@ function useElapsedMinutes(startedAt: string | null) {
 }
 
 export function WorkoutScreen() {
-  const { activeWorkout, addSet, beginWorkout, cancelActiveWorkout, completeWorkout, error, initializing, localReady, pendingRoutine, refresh, refreshing, removeSet, todayCompletedWorkout, updateSet, weeklyPlan } = useGymTrack();
+  const {
+    activeWorkout, addSet, beginWorkout, cancelActiveWorkout, completeWorkout, error, finishCardio, initializing,
+    localReady, pauseCardio, pendingRoutine, refresh, refreshing, removeSet, resumeCardio, startCardio,
+    syncCardioTimers, todayCompletedWorkout, updateSet, weeklyPlan,
+  } = useGymTrack();
   const { confirm, showToast } = useFeedback();
   const [working, setWorking] = useState(false);
+  const syncCardioTimersRef = useRef(syncCardioTimers);
+  const activeWorkoutId = activeWorkout?.id ?? null;
   const elapsed = useElapsedMinutes(activeWorkout?.startedAt ?? null);
   const todaySchedule = weeklyPlan ? getPlanForDate(weeklyPlan, new Date()) : null;
 
+  useEffect(() => { syncCardioTimersRef.current = syncCardioTimers; }, [syncCardioTimers]);
+
   useFocusEffect(useCallback(() => {
-    if (!localReady || activeWorkout || todayCompletedWorkout) return;
-    void refresh();
-  }, [activeWorkout, localReady, refresh, todayCompletedWorkout]));
+    if (!localReady) return;
+    if (activeWorkoutId) {
+      void syncCardioTimersRef.current().then((completed) => {
+        if (completed) showToast({ type: 'success', title: 'Cardio completado' });
+      });
+      return;
+    }
+    if (!todayCompletedWorkout) void refresh();
+  }, [activeWorkoutId, localReady, refresh, showToast, todayCompletedWorkout]));
+
+  useEffect(() => {
+    if (!localReady || !activeWorkoutId) return undefined;
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      void syncCardioTimersRef.current().then((completed) => {
+        if (completed) showToast({ type: 'success', title: 'Cardio completado' });
+      });
+    });
+    return () => subscription.remove();
+  }, [activeWorkoutId, localReady, showToast]);
 
   const start = async (allowRest = false) => {
     setWorking(true);
@@ -57,12 +86,41 @@ export function WorkoutScreen() {
     if (result === 'completed') showToast({ type: 'warning', title: 'Serie completada', message: 'Desmárcala antes de eliminarla.' });
     return result;
   };
+  const runCardioAction = async (action: () => Promise<void>) => {
+    try { await action(); }
+    catch (reason) { showToast({ type: 'error', title: 'No se pudo actualizar Cardio', message: reason instanceof Error ? reason.message : 'Inténtalo nuevamente.' }); }
+  };
+  const completeExpiredCardio = async () => {
+    const completed = await syncCardioTimers();
+    if (completed) showToast({ type: 'success', title: 'Cardio completado' });
+  };
+  const requestFinishCardio = (exercise: WorkoutExercise) => {
+    const elapsedSeconds = getCardioElapsedSeconds({
+      state: exercise.cardioTimerState,
+      targetDurationMinutes: exercise.targetDurationMinutes ?? 0,
+      elapsedSeconds: exercise.cardioElapsedSeconds,
+      lastStartedAt: exercise.cardioLastStartedAt,
+    });
+    confirm({
+      title: '¿Finalizar Cardio?',
+      message: `Realizado: aproximadamente ${formatDuration(elapsedSeconds / 60)}. Objetivo: ${formatDuration(exercise.targetDurationMinutes ?? 0)}.`,
+      confirmLabel: 'Finalizar',
+      cancelLabel: 'Seguir',
+      icon: 'stop-circle-outline',
+      onConfirm: async () => {
+        const savedElapsed = await finishCardio(exercise.id);
+        showToast({ type: 'success', title: 'Cardio completado', message: `Registramos aproximadamente ${formatDuration(savedElapsed / 60)}.` });
+      },
+    });
+  };
 
   if (initializing || refreshing) return <Screen key="loading"><ScreenHeader title="Entrenar" subtitle={initializing ? 'Preparando tu sesión local' : 'Actualizando tu sesión'} /><Card style={styles.centerCard}><ActivityIndicator color={colors.primary} size="large" /><Text style={styles.emptyText}>{initializing ? 'Cargando entrenamiento…' : 'Comprobando cambios locales…'}</Text></Card></Screen>;
   if (activeWorkout) {
-    const sets = activeWorkout.exercises.flatMap((exercise) => exercise.sets);
-    const completed = sets.filter((set) => set.completed).length;
-    return <Screen key={`active-${activeWorkout.id}`}><ScreenHeader title="Entrenar" subtitle={`${activeWorkout.sessionName} · ${elapsed} min`} /><View style={styles.summary}><Text style={styles.summaryText}>{completed} / {sets.length} series</Text><ProgressBar value={sets.length ? (completed / sets.length) * 100 : 0} /></View>{activeWorkout.exercises.length === 0 ? <Card style={styles.errorCard}><Ionicons color={colors.danger} name="alert-circle-outline" size={30} /><Text style={styles.emptyTitle}>La sesión activa no tiene ejercicios</Text><Text style={styles.emptyText}>Puedes cancelarla de forma segura y volver a iniciar.</Text></Card> : <View style={styles.list}>{activeWorkout.exercises.map((exercise, index) => <WorkoutExerciseCard exercise={exercise} index={index} key={exercise.id} onAddSet={() => handleAddSet(exercise.id)} onRemoveSet={handleRemoveSet} onUpdateSet={updateSet} />)}</View>}<PrimaryButton disabled={activeWorkout.exercises.length === 0} icon="checkmark-circle-outline" loading={working} title="Finalizar entrenamiento" onPress={requestFinish} /><SecondaryButton icon="close-circle-outline" title="Cancelar entrenamiento" tone="danger" onPress={requestCancel} /></Screen>;
+    const strengthSets = activeWorkout.exercises.filter((exercise) => exercise.mode === 'strength').flatMap((exercise) => exercise.sets);
+    const cardioExercises = activeWorkout.exercises.filter((exercise) => exercise.mode === 'cardio');
+    const totalUnits = strengthSets.length + cardioExercises.length;
+    const completedUnits = strengthSets.filter((set) => set.completed).length + cardioExercises.filter((exercise) => exercise.cardioCompleted).length;
+    return <Screen key={`active-${activeWorkout.id}`}><ScreenHeader title="Entrenar" subtitle={`${activeWorkout.sessionName} · ${formatDuration(elapsed)}`} /><View style={styles.summary}><Text style={styles.summaryText}>{completedUnits} / {totalUnits} unidades completadas</Text><ProgressBar value={totalUnits ? (completedUnits / totalUnits) * 100 : 0} /></View>{activeWorkout.exercises.length === 0 ? <Card style={styles.errorCard}><Ionicons color={colors.danger} name="alert-circle-outline" size={30} /><Text style={styles.emptyTitle}>La sesión activa no tiene ejercicios</Text><Text style={styles.emptyText}>Puedes cancelarla de forma segura y volver a iniciar.</Text></Card> : <View style={styles.list}>{activeWorkout.exercises.map((exercise, index) => exercise.mode === 'cardio' ? <CardioWorkoutCard exercise={exercise} index={index} key={exercise.id} onExpire={completeExpiredCardio} onFinish={() => requestFinishCardio(exercise)} onPause={() => runCardioAction(() => pauseCardio(exercise.id))} onResume={() => runCardioAction(() => resumeCardio(exercise.id))} onStart={() => runCardioAction(() => startCardio(exercise.id))} /> : <WorkoutExerciseCard exercise={exercise} index={index} key={exercise.id} onAddSet={() => handleAddSet(exercise.id)} onRemoveSet={handleRemoveSet} onUpdateSet={updateSet} />)}</View>}<PrimaryButton disabled={activeWorkout.exercises.length === 0} icon="checkmark-circle-outline" loading={working} title="Finalizar entrenamiento" onPress={requestFinish} /><SecondaryButton icon="close-circle-outline" title="Cancelar entrenamiento" tone="danger" onPress={requestCancel} /></Screen>;
   }
   if (todayCompletedWorkout && weeklyPlan) return <WorkoutCompletedState onAdditional={requestAdditional} weeklyPlan={weeklyPlan} workout={todayCompletedWorkout} />;
   if (error) return <Screen key="error"><ScreenHeader title="Entrenar" subtitle="No pudimos cargar tu estado" /><Card style={styles.errorCard}><Ionicons color={colors.danger} name="alert-circle-outline" size={34} /><Text style={styles.emptyTitle}>Ocurrió un problema</Text><Text style={styles.emptyText}>{error}</Text></Card><PrimaryButton icon="refresh" title="Reintentar" onPress={() => void refresh()} /></Screen>;
@@ -71,7 +129,7 @@ export function WorkoutScreen() {
   if (todaySchedule.sessionType === 'rest') return <Screen key="rest"><ScreenHeader title="Entrenar" subtitle={metadata.dayName} /><Card style={styles.centerCard}><View style={styles.restIcon}><Ionicons color={colors.textMuted} name="moon-outline" size={38} /></View><Text style={styles.emptyTitle}>Día de descanso</Text><Text style={styles.emptyText}>Hoy toca recuperar. Tu próximo entrenamiento está en el plan semanal.</Text></Card></Screen>;
   const plannedName = pendingRoutine?.name ?? todaySchedule.displayName;
   const plannedMinutes = pendingRoutine?.estimatedMinutes ?? todaySchedule.estimatedMinutes;
-  return <Screen key="not-started"><ScreenHeader title="Entrenar" subtitle={`${metadata.dayName} · ${pendingRoutine ? 'Rutina aceptada' : 'Tu plan de hoy'}`} /><Card style={styles.empty}><Text style={styles.planLabel}>{pendingRoutine ? 'RUTINA ACEPTADA' : todaySchedule.isOptional ? 'SESIÓN OPCIONAL' : 'ENTRENAMIENTO DE HOY'}</Text><Text style={styles.emptyTitle}>{plannedName}</Text><Text style={styles.emptyText}>{pendingRoutine ? `Usaremos los ${pendingRoutine.exerciseCount} ejercicios que guardaste en Coach.` : 'Crearemos una sesión coherente con estos músculos usando tu catálogo local.'}</Text>{plannedMinutes ? <Text style={styles.duration}>{plannedMinutes} min estimados</Text> : null}</Card><PrimaryButton disabled={!localReady || !weeklyPlan} loading={working} title={todaySchedule.isOptional && !pendingRoutine ? 'Iniciar sesión opcional' : 'Iniciar entrenamiento'} onPress={() => void start()} /></Screen>;
+  return <Screen key="not-started"><ScreenHeader title="Entrenar" subtitle={`${metadata.dayName} · ${pendingRoutine ? 'Rutina aceptada' : 'Tu plan de hoy'}`} /><Card style={styles.empty}><Text style={styles.planLabel}>{pendingRoutine ? 'RUTINA ACEPTADA' : todaySchedule.isOptional ? 'SESIÓN OPCIONAL' : 'ENTRENAMIENTO DE HOY'}</Text><Text style={styles.emptyTitle}>{plannedName}</Text><Text style={styles.emptyText}>{pendingRoutine ? `Usaremos los ${pendingRoutine.exerciseCount} ejercicios que guardaste en Coach.` : 'Crearemos una sesión coherente con estos músculos usando tu catálogo local.'}</Text>{plannedMinutes ? <Text style={styles.duration}>{formatDuration(plannedMinutes)} estimados</Text> : null}</Card><PrimaryButton disabled={!localReady || !weeklyPlan} loading={working} title={todaySchedule.isOptional && !pendingRoutine ? 'Iniciar sesión opcional' : 'Iniciar entrenamiento'} onPress={() => void start()} /></Screen>;
 }
 
 const styles = StyleSheet.create({

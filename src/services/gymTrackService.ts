@@ -7,12 +7,19 @@ import type { CatalogExercise, RoutinePreview, RoutinePreviewExercise, RoutineRe
 import {
   estimateExerciseDuration, estimateRoutineDuration, MAX_ROUTINE_DURATION_MINUTES, MIN_ROUTINE_DURATION_MINUTES,
 } from '@/utils/duration';
+import { isValidCardioDuration } from '@/utils/cardioTimer';
 
 function shuffled<T>(items: T[]) {
   return [...items].sort(() => Math.random() - 0.5);
 }
 
-function toPreviewExercise(exercise: CatalogExercise, targetMuscleId: string, targetMuscleName: string): RoutinePreviewExercise {
+function toPreviewExercise(
+  exercise: CatalogExercise,
+  targetMuscleId: string,
+  targetMuscleName: string,
+  targetDurationMinutes: number | null = null,
+): RoutinePreviewExercise {
+  const mode = exercise.exerciseType === 'cardio' ? 'cardio' : 'strength';
   return {
     exerciseId: exercise.id,
     name: exercise.name,
@@ -22,23 +29,31 @@ function toPreviewExercise(exercise: CatalogExercise, targetMuscleId: string, ta
     exerciseFamily: exercise.exerciseFamily,
     exerciseType: exercise.exerciseType,
     difficulty: exercise.difficulty,
-    estimatedMinutes: estimateExerciseDuration(exercise),
+    estimatedMinutes: mode === 'cardio' && targetDurationMinutes !== null
+      ? targetDurationMinutes
+      : estimateExerciseDuration(exercise),
+    mode,
+    targetDurationMinutes: mode === 'cardio' ? targetDurationMinutes ?? exercise.estimatedMinutes : null,
   };
 }
 
 function validateRoutineRequest(request: RoutineRequest) {
-  if (request.muscleTargets.length === 0) throw new Error('Selecciona al menos un grupo muscular.');
+  if (request.muscleTargets.length === 0 && !request.cardioTarget) throw new Error('Selecciona al menos un grupo muscular o Cardio.');
   if (!Number.isInteger(request.targetDurationMinutes) || request.targetDurationMinutes < MIN_ROUTINE_DURATION_MINUTES || request.targetDurationMinutes > MAX_ROUTINE_DURATION_MINUTES) {
     throw new Error(`La duración objetivo debe estar entre ${MIN_ROUTINE_DURATION_MINUTES} y ${MAX_ROUTINE_DURATION_MINUTES} minutos.`);
   }
   const muscleIds = new Set<string>();
   for (const target of request.muscleTargets) {
+    if (target.muscleId === 'cardio') throw new Error('Cardio debe configurarse mediante una duración.');
     if (!target.muscleId || !target.muscleName.trim()) throw new Error('La selección contiene un músculo inválido.');
     if (muscleIds.has(target.muscleId)) throw new Error(`El músculo ${target.muscleName} está duplicado.`);
     if (!Number.isInteger(target.exerciseCount) || target.exerciseCount < 1 || target.exerciseCount > 6) {
       throw new Error(`${target.muscleName} debe solicitar entre 1 y 6 ejercicios.`);
     }
     muscleIds.add(target.muscleId);
+  }
+  if (request.cardioTarget && !isValidCardioDuration(request.cardioTarget.durationMinutes)) {
+    throw new Error('La duración de Cardio debe estar entre 10 y 60 minutos, en incrementos de 5.');
   }
 }
 
@@ -66,9 +81,25 @@ export async function generateRoutinePreview(db: SQLiteDatabase, userId: string,
     }
   }
 
+  if (request.cardioTarget) {
+    const options = shuffled(
+      (await listExercisesForMuscleIds(db, ['cardio']))
+        .filter((exercise) => exercise.exerciseType === 'cardio' && availableIds.has(exercise.id) && !selectedIds.has(exercise.id)),
+    );
+    const cardio = options[0];
+    if (cardio) {
+      selected.push(toPreviewExercise(cardio, 'cardio', 'Cardio', request.cardioTarget.durationMinutes));
+      selectedIds.add(cardio.id);
+    } else if (selected.length > 0) {
+      availabilityMessages.push(`No encontramos equipo de cardio disponible en ${location.name}.`);
+    } else {
+      throw new Error(`No encontramos equipo de cardio disponible en ${location.name}.`);
+    }
+  }
+
   if (selected.length === 0) throw new Error(`No encontramos ejercicios compatibles con el equipo de ${location.name}.`);
   return {
-    name: request.muscleTargets.map((target) => target.muscleName).join(' + '),
+    name: [...request.muscleTargets.map((target) => target.muscleName), ...(request.cardioTarget ? ['Cardio'] : [])].join(' + '),
     targetDurationMinutes: request.targetDurationMinutes,
     estimatedDurationMinutes: estimateRoutineDuration(selected),
     exercises: selected,
@@ -107,7 +138,7 @@ export async function replaceRoutinePreviewExercise(
   }
 
   const exercises = preview.exercises.map((exercise, index) => index === exerciseIndex
-    ? toPreviewExercise(replacement, current.targetMuscleId, current.targetMuscleName)
+    ? toPreviewExercise(replacement, current.targetMuscleId, current.targetMuscleName, current.targetDurationMinutes)
     : exercise);
   return { ...preview, exercises, estimatedDurationMinutes: estimateRoutineDuration(exercises) };
 }

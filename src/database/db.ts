@@ -10,4 +10,6 @@ export async function initializeDatabase(db: SQLiteDatabase) {
   await db.execAsync('PRAGMA foreign_keys = ON');
   await runMigrations(db);
   await seedDatabase(db);
+  const foreignKeyViolations = await db.getAllAsync('PRAGMA foreign_key_check');
+  if (foreignKeyViolations.length > 0) throw new Error('La base local contiene referencias inválidas.');
 }

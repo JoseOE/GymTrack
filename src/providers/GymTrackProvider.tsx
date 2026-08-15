@@ -11,12 +11,13 @@ import { saveProfile as persistProfile } from '@/database/repositories/profileRe
 import { getPendingRoutineSummary } from '@/database/repositories/routineRepository';
 import { ensureActiveWeeklyPlan, resetWeeklyPlanToDefault, saveWeeklyPlan } from '@/database/repositories/weeklyPlanRepository';
 import {
-  addWorkoutSet, cancelWorkout, deleteWorkoutSet, finishWorkout, getActiveWorkout, listCompletedDates,
-  listCompletedSessionSnapshots, listRecentWorkouts, saveWorkoutSet, startWorkout,
+  addWorkoutSet, cancelWorkout, completeExpiredCardioTimers, deleteWorkoutSet, finishCardioTimer, finishWorkout,
+  getActiveWorkout, listCompletedDates, listCompletedSessionSnapshots, listRecentWorkouts, pauseCardioTimer,
+  resumeCardioTimer, saveWorkoutSet, startCardioTimer, startWorkout,
 } from '@/database/repositories/workoutRepository';
 import type {
   ActiveWorkout, MuscleGroup, OnboardingProfileInput, PendingRoutineSummary, RecentWorkout, RemoveWorkoutSetResult,
-  RoutinePreview, RoutineRequest, SharedRoutineImportPreparation, SharedRoutinePayloadV1, TrainingLocation, UserProfile,
+  RoutinePreview, RoutineRequest, SharedRoutineImportPreparation, SharedRoutinePayload, TrainingLocation, UserProfile,
   WeeklyPlan, WeeklyPlanDraft, WeeklyProgress, WorkoutSet,
 } from '@/domain/models';
 import { useAuth } from '@/providers/AuthProvider';
@@ -57,11 +58,16 @@ type GymTrackContextValue = {
   updateSet: (set: WorkoutSet) => Promise<void>;
   addSet: (workoutExerciseId: string) => Promise<void>;
   removeSet: (setId: string) => Promise<RemoveWorkoutSetResult>;
+  startCardio: (workoutExerciseId: string) => Promise<void>;
+  pauseCardio: (workoutExerciseId: string) => Promise<void>;
+  resumeCardio: (workoutExerciseId: string) => Promise<void>;
+  finishCardio: (workoutExerciseId: string) => Promise<number>;
+  syncCardioTimers: () => Promise<boolean>;
   completeWorkout: (sessionId: string) => Promise<void>;
   cancelActiveWorkout: (sessionId: string) => Promise<void>;
   previewRoutine: (request: RoutineRequest) => Promise<RoutinePreview>;
   replacePreviewExercise: (preview: RoutinePreview, exerciseIndex: number, recentlyReplacedExerciseIds?: string[]) => Promise<RoutinePreview>;
-  prepareImportedRoutine: (payload: SharedRoutinePayloadV1) => Promise<SharedRoutineImportPreparation>;
+  prepareImportedRoutine: (payload: SharedRoutinePayload) => Promise<SharedRoutineImportPreparation>;
   acceptRoutine: (preview: RoutinePreview) => Promise<string>;
 };
 
@@ -307,6 +313,33 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
       const result = await deleteWorkoutSet(db, userId, setId);
       if (result === 'removed') setActiveWorkout(await getActiveWorkout(db, userId));
       return result;
+    },
+    startCardio: async (workoutExerciseId) => {
+      const userId = requireUserId();
+      await startCardioTimer(db, userId, workoutExerciseId);
+      setActiveWorkout(await getActiveWorkout(db, userId));
+    },
+    pauseCardio: async (workoutExerciseId) => {
+      const userId = requireUserId();
+      await pauseCardioTimer(db, userId, workoutExerciseId);
+      setActiveWorkout(await getActiveWorkout(db, userId));
+    },
+    resumeCardio: async (workoutExerciseId) => {
+      const userId = requireUserId();
+      await resumeCardioTimer(db, userId, workoutExerciseId);
+      setActiveWorkout(await getActiveWorkout(db, userId));
+    },
+    finishCardio: async (workoutExerciseId) => {
+      const userId = requireUserId();
+      const elapsedSeconds = await finishCardioTimer(db, userId, workoutExerciseId);
+      setActiveWorkout(await getActiveWorkout(db, userId));
+      return elapsedSeconds;
+    },
+    syncCardioTimers: async () => {
+      const userId = requireUserId();
+      const completed = await completeExpiredCardioTimers(db, userId);
+      setActiveWorkout(await getActiveWorkout(db, userId));
+      return completed > 0;
     },
     completeWorkout: async (sessionId) => { await finishWorkout(db, requireUserId(), sessionId); await refresh(); },
     cancelActiveWorkout: async (sessionId) => { await cancelWorkout(db, requireUserId(), sessionId); await refresh(); },

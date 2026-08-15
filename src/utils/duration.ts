@@ -1,4 +1,4 @@
-import type { CatalogExercise, RoutinePreviewExercise } from '@/domain/models';
+import type { CatalogExercise, ExerciseMode, RoutinePreviewExercise } from '@/domain/models';
 
 export const MIN_ROUTINE_DURATION_MINUTES = 20;
 export const MAX_ROUTINE_DURATION_MINUTES = 180;
@@ -42,6 +42,29 @@ export function estimateExerciseDuration(
 
 export function estimateRoutineDuration(exercises: Pick<RoutinePreviewExercise, 'estimatedMinutes'>[]) {
   return exercises.reduce((total, exercise) => total + exercise.estimatedMinutes, 0);
+}
+
+export type PersistedRoutinePrescription = {
+  exerciseType: CatalogExercise['exerciseType'];
+  catalogEstimatedMinutes: number;
+  mode: ExerciseMode;
+  targetDurationMinutes: number | null;
+  targetSets: number;
+  minReps: number;
+  maxReps: number;
+  restSeconds: number;
+};
+
+export function estimatePersistedRoutineDuration(exercises: PersistedRoutinePrescription[]) {
+  return exercises.reduce((total, exercise) => {
+    if (exercise.mode === 'cardio') {
+      return total + Math.max(1, Math.round(exercise.targetDurationMinutes ?? exercise.catalogEstimatedMinutes));
+    }
+    return total + estimateExerciseDuration(
+      { exerciseType: exercise.exerciseType, estimatedMinutes: exercise.catalogEstimatedMinutes },
+      exercise,
+    );
+  }, 0);
 }
 
 export function describeDurationDifference(targetMinutes: number, estimatedMinutes: number) {

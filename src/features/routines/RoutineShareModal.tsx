@@ -24,7 +24,7 @@ export function RoutineShareModal({ visible, payload, routineName, exerciseCount
           <Text style={styles.meta}>{exerciseCount} ejercicios</Text>
           <View accessibilityLabel={`Código QR de la rutina ${routineName}`} style={styles.qrContainer}>{visible && payload ? <QRCode backgroundColor="#FFFFFF" color="#000000" size={260} value={payload} /> : null}</View>
           <Text style={styles.help}>Tu amigo puede escanear este código desde GymTrack.</Text>
-          <Text style={styles.privacy}>El código contiene únicamente el nombre de la rutina y los IDs ordenados de sus ejercicios.</Text>
+          <Text style={styles.privacy}>El código contiene únicamente el nombre, los ejercicios ordenados y la duración indicada para Cardio.</Text>
         </Card>
       </ScrollView>
     </SafeAreaView>

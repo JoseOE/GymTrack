@@ -7,6 +7,7 @@ import { Card, Chip, PrimaryButton, Screen, ScreenHeader, SecondaryButton, Secti
 import { colors, radii, spacing, typography } from '@/constants/theme';
 import type { MuscleExerciseTarget, RoutinePreview, RoutineRequest, WeeklyPlanMuscle } from '@/domain/models';
 import { RoutineShareModal } from '@/features/routines/RoutineShareModal';
+import { WarmUpCard } from '@/features/workout/WarmUpCard';
 import { useFeedback } from '@/providers/FeedbackProvider';
 import { useGymTrack } from '@/providers/GymTrackProvider';
 import { encodeSharedRoutine } from '@/services/sharedRoutineService';
@@ -19,6 +20,7 @@ import {
   CARDIO_DURATION_STEP_MINUTES, DEFAULT_CARDIO_DURATION_MINUTES, MAX_CARDIO_DURATION_MINUTES,
   MIN_CARDIO_DURATION_MINUTES,
 } from '@/utils/cardioTimer';
+import { createWarmUpPlan } from '@/utils/warmUp';
 
 const objectives = ['Ganar músculo', 'Ganar fuerza', 'Perder grasa'];
 const durationPresets = [30, 45, 60, 75, 90, 120, 150];
@@ -125,6 +127,7 @@ function CoachForm({ defaultMuscles }: { defaultMuscles: WeeklyPlanMuscle[] }) {
       showToast({ type: 'warning', title: 'No se pudo compartir', message: reason instanceof Error ? reason.message : 'Esta rutina no se puede convertir en QR.' });
     }
   };
+  const warmUpPlan = preview ? createWarmUpPlan(preview.exercises) : null;
 
   return <Screen>
     <ScreenHeader title="Coach" subtitle={`Generador local · ${activeTrainingLocation?.name ?? 'sin ubicación activa'}`} />
@@ -146,7 +149,8 @@ function CoachForm({ defaultMuscles }: { defaultMuscles: WeeklyPlanMuscle[] }) {
     <ChoiceField title="Lesiones o limitaciones" options={limitations} value={limitation} onChange={setLimitation} />
     {limitation !== 'Ninguna' ? <Text style={styles.warning}>La limitación queda seleccionada localmente, pero esta versión provisional todavía no evalúa seguridad clínica.</Text> : null}
     {preview ? <Card style={styles.preview}>
-      <View><Text style={styles.previewTitle}>{preview.name}</Text><Text style={styles.previewMeta}>{preview.exercises.length} ejercicios · {preview.locationName}</Text><Text style={styles.previewDetail}>Objetivo · {formatDuration(preview.targetDurationMinutes)}</Text><Text style={styles.previewDetail}>Estimación · ≈ {formatDuration(preview.estimatedDurationMinutes)}</Text><Text style={styles.durationMessage}>{describeDurationDifference(preview.targetDurationMinutes, preview.estimatedDurationMinutes)}</Text>{preview.availabilityMessages.map((message) => <Text key={message} style={styles.warning}>{message}</Text>)}</View>
+      <View><Text style={styles.previewTitle}>{preview.name}</Text><Text style={styles.previewMeta}>{preview.exercises.length} ejercicios · {preview.locationName}</Text><Text style={styles.previewDetail}>Objetivo · {formatDuration(preview.targetDurationMinutes)}</Text><View style={styles.durationBreakdown}>{preview.strengthEstimatedMinutes > 0 ? <DurationLine label="Trabajo de fuerza" minutes={preview.strengthEstimatedMinutes} /> : null}{preview.cardioEstimatedMinutes > 0 ? <DurationLine label="Cardio" minutes={preview.cardioEstimatedMinutes} /> : null}<DurationLine label="Calentamiento" minutes={preview.warmUpEstimatedMinutes} /><DurationLine emphasized label="Total estimado" minutes={preview.estimatedDurationMinutes} /></View><Text style={styles.durationMessage}>{describeDurationDifference(preview.targetDurationMinutes, preview.estimatedDurationMinutes)}</Text>{preview.availabilityMessages.map((message) => <Text key={message} style={styles.warning}>{message}</Text>)}</View>
+      {warmUpPlan ? <WarmUpCard plan={warmUpPlan} /> : null}
       {preview.exercises.map((exercise, index) => <View key={`${index}-${exercise.exerciseId}`} style={styles.previewRow}><Text style={styles.previewNumber}>{index + 1}</Text><View style={styles.previewCopy}><Text style={styles.exerciseName}>{exercise.name}</Text><Text style={styles.exerciseMuscle}>{exercise.targetMuscleName}{exercise.mode === 'cardio' ? ` · ${formatDuration(exercise.targetDurationMinutes ?? exercise.estimatedMinutes)}` : ''}</Text></View><Pressable accessibilityLabel={`Cambiar ${exercise.name}`} accessibilityRole="button" disabled={replacingIndex !== null || working} onPress={() => void replaceExercise(index)} style={({ pressed }) => [styles.changeButton, pressed && styles.pressed, (replacingIndex !== null || working) && styles.disabled]}>{replacingIndex === index ? <ActivityIndicator color={colors.primary} size="small" /> : <Ionicons color={colors.primary} name="refresh" size={18} />}<Text style={styles.changeText}>Cambiar</Text></Pressable></View>)}
       <View style={styles.actions}><View style={styles.flex}><SecondaryButton disabled={replacingIndex !== null} title="Cancelar" onPress={() => setPreview(null)} /></View><View style={styles.flex}><SecondaryButton disabled={replacingIndex !== null} icon="refresh" title="Regenerar toda" loading={working} onPress={() => void generate(previewRequest ?? buildRequest())} /></View></View>
       <SecondaryButton disabled={replacingIndex !== null || working} icon="qr-code-outline" title="Compartir QR" onPress={sharePreview} />
@@ -155,6 +159,10 @@ function CoachForm({ defaultMuscles }: { defaultMuscles: WeeklyPlanMuscle[] }) {
     <Text style={styles.disclaimer}>Sin OpenAI · sin IA · selección local desde el catálogo y tu equipo disponible</Text>
     <RoutineShareModal exerciseCount={preview?.exercises.length ?? 0} onClose={() => setSharePayload(null)} payload={sharePayload ?? ''} routineName={preview?.name ?? 'Rutina GymTrack'} visible={sharePayload !== null} />
   </Screen>;
+}
+
+function DurationLine({ label, minutes, emphasized = false }: { label: string; minutes: number; emphasized?: boolean }) {
+  return <View style={styles.durationLine}><Text style={[styles.durationLabel, emphasized && styles.durationEmphasis]}>{label}</Text><Text style={[styles.durationValue, emphasized && styles.durationEmphasis]}>{formatDuration(minutes)}</Text></View>;
 }
 
 function Stepper({ label, value, decrementDisabled, incrementDisabled, onDecrement, onIncrement }: { label: string; value: string; decrementDisabled: boolean; incrementDisabled: boolean; onDecrement: () => void; onIncrement: () => void }) {
@@ -184,6 +192,11 @@ const styles = StyleSheet.create({
   previewTitle: { ...typography.title, color: colors.text },
   previewMeta: { ...typography.caption, color: colors.primary, marginTop: spacing.xs },
   previewDetail: { ...typography.body, color: colors.textMuted, marginTop: spacing.xs },
+  durationBreakdown: { gap: spacing.xs, marginTop: spacing.md, paddingTop: spacing.md, borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
+  durationLine: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md },
+  durationLabel: { ...typography.caption, color: colors.textMuted },
+  durationValue: { ...typography.caption, color: colors.text },
+  durationEmphasis: { color: colors.primary, fontWeight: '700' },
   durationMessage: { ...typography.caption, color: colors.textMuted, marginTop: spacing.sm },
   previewRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   previewNumber: { ...typography.label, color: colors.primary, width: 20 },

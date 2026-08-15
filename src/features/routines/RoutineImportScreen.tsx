@@ -6,10 +6,12 @@ import { ActivityIndicator, Linking, StyleSheet, Text, View } from 'react-native
 import { Card, IconButton, PrimaryButton, Screen, ScreenHeader, SecondaryButton, SectionTitle } from '@/components/ui';
 import { colors, radii, spacing, typography } from '@/constants/theme';
 import type { SharedRoutineImportPreparation } from '@/domain/models';
+import { WarmUpCard } from '@/features/workout/WarmUpCard';
 import { useFeedback } from '@/providers/FeedbackProvider';
 import { useGymTrack } from '@/providers/GymTrackProvider';
 import { decodeSharedRoutine } from '@/services/sharedRoutineService';
 import { formatDuration } from '@/utils/duration';
+import { createWarmUpPlan } from '@/utils/warmUp';
 
 export function RoutineImportScreen() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -94,7 +96,8 @@ function PermissionCard({ canAskAgain, onRequest }: { canAskAgain: boolean; onRe
 
 function ImportPreview({ preparation, saving, onSave }: { preparation: Extract<SharedRoutineImportPreparation, { status: 'ready' }>; saving: boolean; onSave: () => void }) {
   const { preview, unavailableEquipmentCount } = preparation;
-  return <View style={styles.section}><SectionTitle detail={`QR V${preparation.payloadVersion}`}>Rutina compartida</SectionTitle><Card style={styles.previewCard}><Text style={styles.cardTitle}>{preview.name}</Text><Text style={styles.meta}>{preview.exercises.length} ejercicios · ≈ {formatDuration(preview.estimatedDurationMinutes)}</Text><Text style={styles.meta}>Ubicación activa · {preview.locationName}</Text>{unavailableEquipmentCount > 0 ? <Text style={styles.warning}>{unavailableEquipmentCount} {unavailableEquipmentCount === 1 ? 'ejercicio utiliza' : 'ejercicios utilizan'} equipo que no tienes disponible en {preview.locationName}. Puedes guardar la rutina de todos modos.</Text> : <Text style={styles.success}>Todos los ejercicios son compatibles con tu equipo actual.</Text>}{preview.exercises.map((exercise, index) => <View key={exercise.exerciseId} style={styles.exerciseRow}><Text style={styles.number}>{index + 1}</Text><View style={styles.flex}><Text style={styles.exerciseName}>{exercise.name}</Text><Text style={styles.muted}>{exercise.muscle}{exercise.mode === 'cardio' ? ` · ${formatDuration(exercise.targetDurationMinutes ?? exercise.estimatedMinutes)}` : ''}</Text></View></View>)}<PrimaryButton icon="save-outline" loading={saving} title="Guardar rutina" onPress={onSave} /></Card></View>;
+  const warmUpPlan = createWarmUpPlan(preview.exercises);
+  return <View style={styles.section}><SectionTitle detail={`QR V${preparation.payloadVersion}`}>Rutina compartida</SectionTitle><Card style={styles.previewCard}><Text style={styles.cardTitle}>{preview.name}</Text><Text style={styles.meta}>{preview.exercises.length} ejercicios · ≈ {formatDuration(preview.estimatedDurationMinutes)} con calentamiento</Text><Text style={styles.meta}>Ubicación activa · {preview.locationName}</Text>{unavailableEquipmentCount > 0 ? <Text style={styles.warning}>{unavailableEquipmentCount} {unavailableEquipmentCount === 1 ? 'ejercicio utiliza' : 'ejercicios utilizan'} equipo que no tienes disponible en {preview.locationName}. Puedes guardar la rutina de todos modos.</Text> : <Text style={styles.success}>Todos los ejercicios son compatibles con tu equipo actual.</Text>}{warmUpPlan ? <WarmUpCard plan={warmUpPlan} /> : null}{preview.exercises.map((exercise, index) => <View key={exercise.exerciseId} style={styles.exerciseRow}><Text style={styles.number}>{index + 1}</Text><View style={styles.flex}><Text style={styles.exerciseName}>{exercise.name}</Text><Text style={styles.muted}>{exercise.muscle}{exercise.mode === 'cardio' ? ` · ${formatDuration(exercise.targetDurationMinutes ?? exercise.estimatedMinutes)}` : ''}</Text></View></View>)}<PrimaryButton icon="save-outline" loading={saving} title="Guardar rutina" onPress={onSave} /></Card></View>;
 }
 
 const styles = StyleSheet.create({

@@ -219,11 +219,27 @@ export type RoutineRequest = {
 export type RoutinePreview = {
   name: string;
   targetDurationMinutes: number;
+  warmUpEstimatedMinutes: number;
+  strengthEstimatedMinutes: number;
+  cardioEstimatedMinutes: number;
+  mainWorkoutEstimatedMinutes: number;
   estimatedDurationMinutes: number;
   exercises: RoutinePreviewExercise[];
   locationId: string;
   locationName: string;
   availabilityMessages: string[];
+};
+
+export type WarmUpStep = {
+  title: string;
+  durationLabel: string;
+  description: string;
+};
+
+export type WarmUpPlan = {
+  kind: 'strength' | 'cardio';
+  estimatedMinutes: number;
+  steps: WarmUpStep[];
 };
 
 export type PendingRoutineSummary = {

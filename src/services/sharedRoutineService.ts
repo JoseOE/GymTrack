@@ -5,7 +5,7 @@ import { getActiveTrainingLocation, listAvailableExerciseIds } from '@/database/
 import type {
   ExerciseMode, RoutinePreviewExercise, SharedRoutineImportPreparation, SharedRoutinePayload,
 } from '@/domain/models';
-import { estimateExerciseDuration, estimateRoutineDuration } from '@/utils/duration';
+import { calculateRoutineDurationBreakdown, estimateExerciseDuration } from '@/utils/duration';
 
 export { decodeSharedRoutine, encodeSharedRoutine, validateSharedRoutine } from '@/services/sharedRoutineCodec';
 
@@ -52,15 +52,19 @@ export async function prepareSharedRoutineImport(
     mode,
     targetDurationMinutes,
   }));
-  const estimatedDurationMinutes = estimateRoutineDuration(previewExercises);
+  const duration = calculateRoutineDurationBreakdown(previewExercises);
   return {
     status: 'ready',
     unavailableEquipmentCount,
     payloadVersion: payload.version,
     preview: {
       name: payload.name.trim(),
-      targetDurationMinutes: estimatedDurationMinutes,
-      estimatedDurationMinutes,
+      targetDurationMinutes: duration.totalEstimatedMinutes,
+      warmUpEstimatedMinutes: duration.warmUpEstimatedMinutes,
+      strengthEstimatedMinutes: duration.strengthEstimatedMinutes,
+      cardioEstimatedMinutes: duration.cardioEstimatedMinutes,
+      mainWorkoutEstimatedMinutes: duration.mainWorkoutEstimatedMinutes,
+      estimatedDurationMinutes: duration.totalEstimatedMinutes,
       exercises: previewExercises,
       locationId: location.id,
       locationName: location.name,

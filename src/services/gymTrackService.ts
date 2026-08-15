@@ -5,7 +5,7 @@ import { getActiveTrainingLocation, listAvailableExerciseIds } from '@/database/
 import { saveRoutine } from '@/database/repositories/routineRepository';
 import type { CatalogExercise, RoutinePreview, RoutinePreviewExercise, RoutineRequest } from '@/domain/models';
 import {
-  estimateExerciseDuration, estimateRoutineDuration, MAX_ROUTINE_DURATION_MINUTES, MIN_ROUTINE_DURATION_MINUTES,
+  calculateRoutineDurationBreakdown, estimateExerciseDuration, MAX_ROUTINE_DURATION_MINUTES, MIN_ROUTINE_DURATION_MINUTES,
 } from '@/utils/duration';
 import { isValidCardioDuration } from '@/utils/cardioTimer';
 
@@ -57,6 +57,17 @@ function validateRoutineRequest(request: RoutineRequest) {
   }
 }
 
+function getPreviewDurationFields(exercises: RoutinePreviewExercise[]) {
+  const duration = calculateRoutineDurationBreakdown(exercises);
+  return {
+    warmUpEstimatedMinutes: duration.warmUpEstimatedMinutes,
+    strengthEstimatedMinutes: duration.strengthEstimatedMinutes,
+    cardioEstimatedMinutes: duration.cardioEstimatedMinutes,
+    mainWorkoutEstimatedMinutes: duration.mainWorkoutEstimatedMinutes,
+    estimatedDurationMinutes: duration.totalEstimatedMinutes,
+  };
+}
+
 export async function generateRoutinePreview(db: SQLiteDatabase, userId: string, request: RoutineRequest): Promise<RoutinePreview> {
   validateRoutineRequest(request);
   const location = await getActiveTrainingLocation(db, userId);
@@ -101,7 +112,7 @@ export async function generateRoutinePreview(db: SQLiteDatabase, userId: string,
   return {
     name: [...request.muscleTargets.map((target) => target.muscleName), ...(request.cardioTarget ? ['Cardio'] : [])].join(' + '),
     targetDurationMinutes: request.targetDurationMinutes,
-    estimatedDurationMinutes: estimateRoutineDuration(selected),
+    ...getPreviewDurationFields(selected),
     exercises: selected,
     locationId: location.id,
     locationName: location.name,
@@ -140,7 +151,7 @@ export async function replaceRoutinePreviewExercise(
   const exercises = preview.exercises.map((exercise, index) => index === exerciseIndex
     ? toPreviewExercise(replacement, current.targetMuscleId, current.targetMuscleName, current.targetDurationMinutes)
     : exercise);
-  return { ...preview, exercises, estimatedDurationMinutes: estimateRoutineDuration(exercises) };
+  return { ...preview, exercises, ...getPreviewDurationFields(exercises) };
 }
 
 export { saveRoutine };

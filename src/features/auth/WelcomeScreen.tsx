@@ -13,22 +13,32 @@ const benefits: { icon: IconName; title: string; description: string }[] = [
   {
     icon: 'calendar-outline',
     title: 'PLANIFICA',
-    description: 'Organiza tus días de entrenamiento y adapta tu distribución semanal.',
+    description: 'Crea un plan semanal personalizado para tus días de entrenamiento.',
   },
   {
     icon: 'barbell-outline',
-    title: 'REGISTRA',
-    description: 'Guarda ejercicios, series, peso y repeticiones durante cada sesión.',
-  },
-  {
-    icon: 'stats-chart-outline',
-    title: 'PROGRESA',
-    description: 'Consulta tu historial y sigue el cumplimiento de tus entrenamientos.',
+    title: 'ENTRENA',
+    description: 'Registra series, pesos y repeticiones durante cada sesión.',
   },
   {
     icon: 'options-outline',
     title: 'COACH',
-    description: 'Prepara rutinas según tus músculos, tiempo disponible y objetivo.',
+    description: 'Genera rutinas locales por músculos y equipo disponible.',
+  },
+  {
+    icon: 'swap-horizontal-outline',
+    title: 'ADAPTA',
+    description: 'Cambia ejercicios individualmente sin rehacer toda tu rutina.',
+  },
+  {
+    icon: 'timer-outline',
+    title: 'CARDIO',
+    description: 'Configura su duración y usa un temporizador que conserva tu avance.',
+  },
+  {
+    icon: 'stats-chart-outline',
+    title: 'PROGRESA',
+    description: 'Consulta tu historial y el cumplimiento de tu semana.',
   },
 ];
 
@@ -58,17 +68,26 @@ export function WelcomeScreen() {
         ))}
       </Card>
 
-      <Card style={styles.personalizationCard}>
+      <View style={styles.highlights}>
+      <Card style={styles.highlightCard}>
         <View style={styles.highlightIcon}>
-          <Ionicons accessibilityElementsHidden color={colors.primary} importantForAccessibility="no" name="fitness-outline" size={22} />
+          <Ionicons accessibilityElementsHidden color={colors.primary} importantForAccessibility="no" name="business-outline" size={22} />
         </View>
         <View style={styles.highlightCopy}>
-          <Text style={styles.highlightTitle}>Entrena a tu manera</Text>
-          <Text style={styles.highlightText}>
-            Personaliza tu plan semanal, duración habitual y preferencias para adaptar GymTrack a tu rutina.
-          </Text>
+          <Text style={styles.highlightTitle}>Tu gimnasio, tus ejercicios</Text>
+          <Text style={styles.highlightText}>GymTrack adapta las rutinas al equipo disponible en tu ubicación activa.</Text>
         </View>
       </Card>
+      <Card style={styles.highlightCard}>
+        <View style={styles.highlightIcon}>
+          <Ionicons accessibilityElementsHidden color={colors.primary} importantForAccessibility="no" name="qr-code-outline" size={22} />
+        </View>
+        <View style={styles.highlightCopy}>
+          <Text style={styles.highlightTitle}>Comparte rutinas por QR</Text>
+          <Text style={styles.highlightText}>Comparte e importa ejercicios y la duración configurada de Cardio.</Text>
+        </View>
+      </Card>
+      </View>
 
       <View accessibilityLabel="Coach inteligente. Próximamente." accessible style={styles.futureCoach}>
         <Ionicons accessibilityElementsHidden color={colors.primary} importantForAccessibility="no" name="sparkles-outline" size={20} />
@@ -133,11 +152,14 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textMuted,
   },
-  personalizationCard: {
+  highlights: {
+    gap: spacing.sm,
+  },
+  highlightCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.md,
-    padding: spacing.lg,
+    padding: spacing.md,
     backgroundColor: colors.primarySoft,
     borderColor: `${colors.primary}55`,
   },
@@ -154,8 +176,9 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   highlightTitle: {
-    ...typography.heading,
+    ...typography.body,
     color: colors.text,
+    fontWeight: '700',
   },
   highlightText: {
     ...typography.caption,

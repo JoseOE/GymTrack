@@ -40,8 +40,36 @@ export function estimateExerciseDuration(
   return Math.max(1, Math.round((executionSeconds + restTimeSeconds + setupAndTransitionSeconds) / 60));
 }
 
-export function estimateRoutineDuration(exercises: Pick<RoutinePreviewExercise, 'estimatedMinutes'>[]) {
-  return exercises.reduce((total, exercise) => total + exercise.estimatedMinutes, 0);
+export type RoutineDurationBreakdown = {
+  warmUpEstimatedMinutes: number;
+  strengthEstimatedMinutes: number;
+  cardioEstimatedMinutes: number;
+  mainWorkoutEstimatedMinutes: number;
+  totalEstimatedMinutes: number;
+};
+
+export function calculateRoutineDurationBreakdown(
+  exercises: Pick<RoutinePreviewExercise, 'estimatedMinutes' | 'mode'>[],
+): RoutineDurationBreakdown {
+  const strengthEstimatedMinutes = exercises
+    .filter((exercise) => exercise.mode === 'strength')
+    .reduce((total, exercise) => total + exercise.estimatedMinutes, 0);
+  const cardioEstimatedMinutes = exercises
+    .filter((exercise) => exercise.mode === 'cardio')
+    .reduce((total, exercise) => total + exercise.estimatedMinutes, 0);
+  const warmUpEstimatedMinutes = strengthEstimatedMinutes > 0 ? 7 : cardioEstimatedMinutes > 0 ? 5 : 0;
+  const mainWorkoutEstimatedMinutes = strengthEstimatedMinutes + cardioEstimatedMinutes;
+  return {
+    warmUpEstimatedMinutes,
+    strengthEstimatedMinutes,
+    cardioEstimatedMinutes,
+    mainWorkoutEstimatedMinutes,
+    totalEstimatedMinutes: warmUpEstimatedMinutes + mainWorkoutEstimatedMinutes,
+  };
+}
+
+export function estimateRoutineDuration(exercises: Pick<RoutinePreviewExercise, 'estimatedMinutes' | 'mode'>[]) {
+  return calculateRoutineDurationBreakdown(exercises).totalEstimatedMinutes;
 }
 
 export type PersistedRoutinePrescription = {
@@ -56,7 +84,7 @@ export type PersistedRoutinePrescription = {
 };
 
 export function estimatePersistedRoutineDuration(exercises: PersistedRoutinePrescription[]) {
-  return exercises.reduce((total, exercise) => {
+  const mainWorkoutEstimatedMinutes = exercises.reduce((total, exercise) => {
     if (exercise.mode === 'cardio') {
       return total + Math.max(1, Math.round(exercise.targetDurationMinutes ?? exercise.catalogEstimatedMinutes));
     }
@@ -65,6 +93,9 @@ export function estimatePersistedRoutineDuration(exercises: PersistedRoutinePres
       exercise,
     );
   }, 0);
+  const hasStrength = exercises.some((exercise) => exercise.mode === 'strength');
+  const warmUpEstimatedMinutes = hasStrength ? 7 : exercises.length > 0 ? 5 : 0;
+  return mainWorkoutEstimatedMinutes + warmUpEstimatedMinutes;
 }
 
 export function describeDurationDifference(targetMinutes: number, estimatedMinutes: number) {

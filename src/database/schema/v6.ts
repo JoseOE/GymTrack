@@ -1,4 +1,4 @@
-// SQLite v7 is reserved for the future cloud-sync phase.
+// SQLite v8 is reserved for the future cloud-sync phase.
 export const schemaV6 = `
 ALTER TABLE routine_exercise ADD COLUMN exercise_mode TEXT NOT NULL DEFAULT 'strength'
   CHECK (exercise_mode IN ('strength', 'cardio'));

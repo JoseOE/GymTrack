@@ -186,6 +186,18 @@ export type WeeklyProgress = {
   completedDays: number[];
 };
 
+export type PersonalRecordExerciseKey = 'bench_press' | 'squat' | 'deadlift';
+export type PersonalRecordSource = 'manual' | 'workout' | 'test';
+
+export type PersonalRecord = {
+  id: string;
+  ownerUserId: string;
+  exerciseKey: PersonalRecordExerciseKey;
+  weightKg: number;
+  source: PersonalRecordSource;
+  updatedAt: string;
+};
+
 export type RoutinePreviewExercise = {
   exerciseId: string;
   name: string;

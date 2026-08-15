@@ -216,3 +216,14 @@ export type PendingRoutineSummary = {
   estimatedMinutes: number;
   exerciseCount: number;
 };
+
+export type SharedRoutinePayloadV1 = {
+  schema: 'gymtrack-routine';
+  version: 1;
+  name: string;
+  exercises: string[];
+};
+
+export type SharedRoutineImportPreparation =
+  | { status: 'missing-exercises'; missingExerciseCount: number }
+  | { status: 'ready'; preview: RoutinePreview; unavailableEquipmentCount: number };

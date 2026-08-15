@@ -69,6 +69,14 @@ export async function getExercisesByNames(db: SQLiteDatabase, names: string[]) {
   return names.flatMap((name) => byName.get(name) ?? []);
 }
 
+export async function getExercisesByIds(db: SQLiteDatabase, exerciseIds: string[]) {
+  if (exerciseIds.length === 0) return [];
+  const placeholders = exerciseIds.map(() => '?').join(', ');
+  const rows = await db.getAllAsync<ExerciseRow>(`${exerciseSelect} WHERE e.active = 1 AND e.id IN (${placeholders})`, exerciseIds);
+  const byId = new Map(rows.map((row) => [row.id, mapExercise(row)]));
+  return exerciseIds.flatMap((exerciseId) => byId.get(exerciseId) ?? []);
+}
+
 export async function listMuscleGroups(db: SQLiteDatabase): Promise<MuscleGroup[]> {
   const rows = await db.getAllAsync<{ id: string; name: string; parent_id: string | null }>(
     `SELECT id, name, parent_id FROM muscle_group

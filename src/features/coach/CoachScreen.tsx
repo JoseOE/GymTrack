@@ -1,12 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Card, Chip, PrimaryButton, Screen, ScreenHeader, SecondaryButton, SectionTitle } from '@/components/ui';
 import { colors, radii, spacing, typography } from '@/constants/theme';
 import type { MuscleExerciseTarget, RoutinePreview, RoutineRequest, WeeklyPlanMuscle } from '@/domain/models';
+import { RoutineShareModal } from '@/features/routines/RoutineShareModal';
 import { useFeedback } from '@/providers/FeedbackProvider';
 import { useGymTrack } from '@/providers/GymTrackProvider';
+import { encodeSharedRoutine } from '@/services/sharedRoutineService';
 import { getPlanForDate } from '@/services/weeklyPlanService';
 import {
   describeDurationDifference, formatDuration, MAX_ROUTINE_DURATION_MINUTES, MIN_ROUTINE_DURATION_MINUTES,
@@ -36,6 +39,7 @@ function CoachForm({ defaultMuscles }: { defaultMuscles: WeeklyPlanMuscle[] }) {
   const [limitation, setLimitation] = useState('Ninguna');
   const [preview, setPreview] = useState<RoutinePreview | null>(null);
   const [previewRequest, setPreviewRequest] = useState<RoutineRequest | null>(null);
+  const [sharePayload, setSharePayload] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const [replacingIndex, setReplacingIndex] = useState<number | null>(null);
   const replacementHistory = useRef<Record<number, string[]>>({});
@@ -102,10 +106,19 @@ function CoachForm({ defaultMuscles }: { defaultMuscles: WeeklyPlanMuscle[] }) {
       setWorking(false);
     }
   };
+  const sharePreview = () => {
+    if (!preview) return;
+    try {
+      setSharePayload(encodeSharedRoutine({ name: preview.name, exerciseIds: preview.exercises.map((exercise) => exercise.exerciseId) }));
+    } catch (reason) {
+      showToast({ type: 'warning', title: 'No se pudo compartir', message: reason instanceof Error ? reason.message : 'Esta rutina no se puede convertir en QR.' });
+    }
+  };
 
   return <Screen>
     <ScreenHeader title="Coach" subtitle={`Generador local · ${activeTrainingLocation?.name ?? 'sin ubicación activa'}`} />
     <Card style={styles.intro}><Text style={styles.introTitle}>Tu rutina, a tu medida</Text><Text style={styles.introText}>Elige cuántos ejercicios quieres para cada músculo. La duración es un objetivo y nunca elimina tu selección.</Text></Card>
+    <SecondaryButton icon="qr-code-outline" title="Importar rutina" onPress={() => router.push('/routine-import')} />
     <ChoiceField title="Nivel" options={['Principiante', 'Intermedio', 'Avanzado']} value={level} onChange={setLevel} />
     <ChoiceField title="Objetivo" options={objectives} value={objective} onChange={setObjective} />
     <View style={styles.section}>
@@ -125,9 +138,11 @@ function CoachForm({ defaultMuscles }: { defaultMuscles: WeeklyPlanMuscle[] }) {
       <View><Text style={styles.previewTitle}>{preview.name}</Text><Text style={styles.previewMeta}>{preview.exercises.length} ejercicios · {preview.locationName}</Text><Text style={styles.previewDetail}>Objetivo · {formatDuration(preview.targetDurationMinutes)}</Text><Text style={styles.previewDetail}>Estimación · ≈ {formatDuration(preview.estimatedDurationMinutes)}</Text><Text style={styles.durationMessage}>{describeDurationDifference(preview.targetDurationMinutes, preview.estimatedDurationMinutes)}</Text>{preview.availabilityMessages.map((message) => <Text key={message} style={styles.warning}>{message}</Text>)}</View>
       {preview.exercises.map((exercise, index) => <View key={`${index}-${exercise.exerciseId}`} style={styles.previewRow}><Text style={styles.previewNumber}>{index + 1}</Text><View style={styles.previewCopy}><Text style={styles.exerciseName}>{exercise.name}</Text><Text style={styles.exerciseMuscle}>{exercise.targetMuscleName}</Text></View><Pressable accessibilityLabel={`Cambiar ${exercise.name}`} accessibilityRole="button" disabled={replacingIndex !== null || working} onPress={() => void replaceExercise(index)} style={({ pressed }) => [styles.changeButton, pressed && styles.pressed, (replacingIndex !== null || working) && styles.disabled]}>{replacingIndex === index ? <ActivityIndicator color={colors.primary} size="small" /> : <Ionicons color={colors.primary} name="refresh" size={18} />}<Text style={styles.changeText}>Cambiar</Text></Pressable></View>)}
       <View style={styles.actions}><View style={styles.flex}><SecondaryButton disabled={replacingIndex !== null} title="Cancelar" onPress={() => setPreview(null)} /></View><View style={styles.flex}><SecondaryButton disabled={replacingIndex !== null} icon="refresh" title="Regenerar toda" loading={working} onPress={() => void generate(previewRequest ?? buildRequest())} /></View></View>
+      <SecondaryButton disabled={replacingIndex !== null || working} icon="qr-code-outline" title="Compartir QR" onPress={sharePreview} />
       <PrimaryButton disabled={replacingIndex !== null} icon="save-outline" loading={working} title="Aceptar y guardar" onPress={() => void accept()} />
     </Card> : <PrimaryButton icon="sparkles-outline" loading={working} title="Generar rutina" onPress={() => void generate(buildRequest())} />}
     <Text style={styles.disclaimer}>Sin OpenAI · sin IA · selección local desde el catálogo y tu equipo disponible</Text>
+    <RoutineShareModal exerciseCount={preview?.exercises.length ?? 0} onClose={() => setSharePayload(null)} payload={sharePayload ?? ''} routineName={preview?.name ?? 'Rutina GymTrack'} visible={sharePayload !== null} />
   </Screen>;
 }
 

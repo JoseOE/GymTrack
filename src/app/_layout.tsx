@@ -49,7 +49,7 @@ function RootNavigator() {
     <Stack.Protected guard={destination === '/legacy-data'}><Stack.Screen name="legacy-data" /></Stack.Protected>
     <Stack.Protected guard={destination === '/local-data-error'}><Stack.Screen name="local-data-error" /></Stack.Protected>
     <Stack.Protected guard={destination === '/onboarding'}><Stack.Screen name="onboarding" /><Stack.Screen name="onboarding-weekly-plan" /></Stack.Protected>
-    <Stack.Protected guard={destination === '/(tabs)'}><Stack.Screen name="(tabs)" /><Stack.Screen name="profile" /><Stack.Screen name="weekly-plan" /><Stack.Screen name="equipment" /></Stack.Protected>
+    <Stack.Protected guard={destination === '/(tabs)'}><Stack.Screen name="(tabs)" /><Stack.Screen name="profile" /><Stack.Screen name="weekly-plan" /><Stack.Screen name="equipment" /><Stack.Screen name="routine-import" /></Stack.Protected>
   </Stack>;
 }
 

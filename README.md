@@ -49,25 +49,15 @@ Desarrollar e implementar un **ecosistema tecnológico integral denominado GymTr
 
 # Objetivos Específicos
 
-1. Diseñar y desarrollar una aplicación móvil multiplataforma para la administración de usuarios, membresías, rutinas y registros de entrenamiento.
+1. Diseñar y desarrollar una aplicación móvil para la gestión de usuarios, membresías, rutinas y registros de entrenamiento.
 
-2. Implementar un sistema de autenticación y gestión de usuarios que permita diferenciar los permisos entre administradores y clientes.
+2. Implementar una base de datos y servicios backend que permitan centralizar y gestionar de forma segura la información de los gimnasios y sus usuarios.
 
-3. Diseñar una base de datos centralizada para almacenar información relacionada con gimnasios, usuarios, membresías, pagos, rutinas, ejercicios y accesos.
+3. Desarrollar un sistema de control de acceso IoT mediante ESP32 y tecnología RFID, capaz de validar en tiempo real el estado de la membresía de los usuarios.
 
-4. Desarrollar un dispositivo IoT basado en ESP32 y tecnología RFID para identificar a los usuarios al momento de ingresar al gimnasio.
+4. Integrar la aplicación móvil, el backend y el dispositivo IoT mediante mecanismos de comunicación seguros, permitiendo automatizar el control de acceso y la gestión de información.
 
-5. Implementar un mecanismo de validación en tiempo real que permita determinar si una membresía se encuentra activa antes de autorizar el acceso.
-
-6. Automatizar el mecanismo de apertura de una puerta o torniquete cuando el usuario se encuentre autorizado.
-
-7. Implementar mecanismos de seguridad para proteger la comunicación entre el dispositivo IoT, el backend y la aplicación móvil.
-
-8. Permitir la distribución de rutinas de entrenamiento de acuerdo con las características y equipamiento disponible en cada gimnasio.
-
-9. Registrar el progreso del usuario mediante información relacionada con sus entrenamientos.
-
-10. Evaluar el impacto del sistema mediante una implementación piloto y la recopilación de indicadores de funcionamiento y satisfacción.
+5. Evaluar el funcionamiento e impacto de GymTrack mediante una implementación piloto, utilizando indicadores relacionados con la automatización, administración y experiencia de los usuarios.
 
 ---
 

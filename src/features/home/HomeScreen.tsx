@@ -8,6 +8,7 @@ import { colors, radii, spacing, typography } from '@/constants/theme';
 import { useFeedback } from '@/providers/FeedbackProvider';
 import { useGymTrack } from '@/providers/GymTrackProvider';
 import { getDefaultExerciseCount, getPlanForDate } from '@/services/weeklyPlanService';
+import { formatDuration } from '@/utils/duration';
 
 const dayOrder = [1, 2, 3, 4, 5, 6, 0];
 
@@ -52,7 +53,7 @@ export function HomeScreen() {
         <View style={styles.eyebrow}><View style={styles.dot} /><Text style={styles.eyebrowText}>{eyebrow}</Text></View>
         <Text style={styles.workout}>{heroName}</Text><Text style={styles.description}>{description}</Text>
         <View style={styles.metrics}>
-          <Metric icon="time-outline" label={activeWorkout ? 'Estado' : 'Duración'} value={activeWorkout ? 'En curso' : todayCompletedWorkout ? `${todayCompletedWorkout.durationMinutes} min` : plannedMinutes ? `${plannedMinutes} min` : 'Descanso'} />
+          <Metric icon="time-outline" label={activeWorkout ? 'Estado' : 'Duración'} value={activeWorkout ? 'En curso' : todayCompletedWorkout ? formatDuration(todayCompletedWorkout.durationMinutes) : plannedMinutes ? formatDuration(plannedMinutes) : 'Descanso'} />
           <View style={styles.divider} />
           <Metric icon="barbell-outline" label="Ejercicios" value={String(activeWorkout?.exercises.length ?? todayCompletedWorkout?.exerciseCount ?? plannedExercises)} />
         </View>

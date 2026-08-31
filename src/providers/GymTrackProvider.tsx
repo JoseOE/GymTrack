@@ -8,18 +8,23 @@ import {
   saveOnboardingProfile,
 } from '@/database/repositories/localAccountRepository';
 import { saveProfile as persistProfile } from '@/database/repositories/profileRepository';
+import { listPersonalRecords, savePersonalRecord as persistPersonalRecord } from '@/database/repositories/personalRecordRepository';
 import { getPendingRoutineSummary } from '@/database/repositories/routineRepository';
 import { ensureActiveWeeklyPlan, resetWeeklyPlanToDefault, saveWeeklyPlan } from '@/database/repositories/weeklyPlanRepository';
 import {
-  addWorkoutSet, cancelWorkout, deleteWorkoutSet, finishWorkout, getActiveWorkout, listCompletedDates,
-  listCompletedSessionSnapshots, listRecentWorkouts, saveWorkoutSet, startWorkout,
+  addWorkoutSet, cancelWorkout, completeExpiredCardioTimers, deleteWorkoutSet, finishCardioTimer, finishWorkout,
+  getActiveWorkout, listCompletedDates, listCompletedSessionSnapshots, listRecentWorkouts, pauseCardioTimer,
+  resumeCardioTimer, saveWorkoutSet, startCardioTimer, startWorkout,
 } from '@/database/repositories/workoutRepository';
 import type {
-  ActiveWorkout, MuscleGroup, OnboardingProfileInput, PendingRoutineSummary, RecentWorkout, RemoveWorkoutSetResult,
-  RoutinePreview, TrainingLocation, UserProfile, WeeklyPlan, WeeklyPlanDraft, WeeklyProgress, WorkoutSet,
+  ActiveWorkout, MuscleGroup, OnboardingProfileInput, PendingRoutineSummary, PersonalRecord, PersonalRecordExerciseKey,
+  RecentWorkout, RemoveWorkoutSetResult,
+  RoutinePreview, RoutineRequest, SharedRoutineImportPreparation, SharedRoutinePayload, TrainingLocation, UserProfile,
+  WeeklyPlan, WeeklyPlanDraft, WeeklyProgress, WorkoutSet,
 } from '@/domain/models';
 import { useAuth } from '@/providers/AuthProvider';
-import { generateRoutinePreview, type RoutineRequest, saveRoutine } from '@/services/gymTrackService';
+import { generateRoutinePreview, replaceRoutinePreviewExercise, saveRoutine } from '@/services/gymTrackService';
+import { prepareSharedRoutineImport } from '@/services/sharedRoutineService';
 import { getPlanForDate, getWeeklyTarget } from '@/services/weeklyPlanService';
 
 type CompletedSnapshot = { completed_at: string; counts_toward_goal: number };
@@ -40,6 +45,7 @@ type GymTrackContextValue = {
   todayCompletedWorkout: RecentWorkout | null;
   pendingRoutine: PendingRoutineSummary | null;
   recentWorkouts: RecentWorkout[];
+  personalRecords: PersonalRecord[];
   completedDates: string[];
   weeklyProgress: WeeklyProgress;
   refresh: () => Promise<void>;
@@ -49,15 +55,23 @@ type GymTrackContextValue = {
   prepareCustomOnboarding: (input: OnboardingProfileInput) => void;
   clearCustomOnboarding: () => void;
   updateProfile: (profile: UserProfile) => Promise<void>;
+  savePersonalRecord: (exerciseKey: PersonalRecordExerciseKey, weightKg: number) => Promise<void>;
   updateWeeklyPlan: (draft: WeeklyPlanDraft) => Promise<void>;
   resetWeeklyPlan: () => Promise<void>;
   beginWorkout: (options?: { allowRest?: boolean }) => Promise<ActiveWorkout>;
   updateSet: (set: WorkoutSet) => Promise<void>;
   addSet: (workoutExerciseId: string) => Promise<void>;
   removeSet: (setId: string) => Promise<RemoveWorkoutSetResult>;
+  startCardio: (workoutExerciseId: string) => Promise<void>;
+  pauseCardio: (workoutExerciseId: string) => Promise<void>;
+  resumeCardio: (workoutExerciseId: string) => Promise<void>;
+  finishCardio: (workoutExerciseId: string) => Promise<number>;
+  syncCardioTimers: () => Promise<boolean>;
   completeWorkout: (sessionId: string) => Promise<void>;
   cancelActiveWorkout: (sessionId: string) => Promise<void>;
   previewRoutine: (request: RoutineRequest) => Promise<RoutinePreview>;
+  replacePreviewExercise: (preview: RoutinePreview, exerciseIndex: number, recentlyReplacedExerciseIds?: string[]) => Promise<RoutinePreview>;
+  prepareImportedRoutine: (payload: SharedRoutinePayload) => Promise<SharedRoutineImportPreparation>;
   acceptRoutine: (preview: RoutinePreview) => Promise<string>;
 };
 
@@ -105,6 +119,7 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
   const [activeWorkout, setActiveWorkout] = useState<ActiveWorkout | null>(null);
   const [pendingRoutine, setPendingRoutine] = useState<PendingRoutineSummary | null>(null);
   const [recentWorkouts, setRecentWorkouts] = useState<RecentWorkout[]>([]);
+  const [personalRecords, setPersonalRecords] = useState<PersonalRecord[]>([]);
   const [completedDates, setCompletedDates] = useState<string[]>([]);
   const [completedSnapshots, setCompletedSnapshots] = useState<CompletedSnapshot[]>([]);
   const refreshId = useRef(0);
@@ -124,6 +139,7 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
     setActiveWorkout(null);
     setPendingRoutine(null);
     setRecentWorkouts([]);
+    setPersonalRecords([]);
     setCompletedDates([]);
     setCompletedSnapshots([]);
     setPendingOnboardingProfile(null);
@@ -157,9 +173,9 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
       }
       setLegacyMigrationRequired(false);
       const nextProfile = await ensureUserWorkspace(db, authenticatedUserId, accountDisplayNameRef.current);
-      const [nextPlan, nextMuscles, nextLocations, nextActive, nextPending, nextRecent, nextDates, nextSnapshots] = await Promise.all([
+      const [nextPlan, nextMuscles, nextLocations, nextActive, nextPending, nextRecent, nextRecords, nextDates, nextSnapshots] = await Promise.all([
         ensureActiveWeeklyPlan(db, authenticatedUserId), listMuscleGroups(db), listTrainingLocations(db, authenticatedUserId),
-        getActiveWorkout(db, authenticatedUserId), getPendingRoutineSummary(db, authenticatedUserId), listRecentWorkouts(db, authenticatedUserId), listCompletedDates(db, authenticatedUserId, historyStartIso()),
+        getActiveWorkout(db, authenticatedUserId), getPendingRoutineSummary(db, authenticatedUserId), listRecentWorkouts(db, authenticatedUserId), listPersonalRecords(db, authenticatedUserId), listCompletedDates(db, authenticatedUserId, historyStartIso()),
         listCompletedSessionSnapshots(db, authenticatedUserId, historyStartIso()),
       ]);
       if (requestId !== refreshId.current) return;
@@ -170,6 +186,7 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
       setActiveWorkout(nextActive);
       setPendingRoutine(nextPending);
       setRecentWorkouts(nextRecent);
+      setPersonalRecords(nextRecords);
       setCompletedDates(nextDates);
       setCompletedSnapshots(nextSnapshots);
       loadedUserIdRef.current = authenticatedUserId;
@@ -230,6 +247,7 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
     todayCompletedWorkout,
     pendingRoutine,
     recentWorkouts,
+    personalRecords,
     completedDates,
     weeklyProgress,
     refresh,
@@ -257,6 +275,13 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
       const saved = await persistProfile(db, nextProfile);
       await updateDisplayName(saved.displayName);
       setProfile(saved);
+    },
+    savePersonalRecord: async (exerciseKey, weightKg) => {
+      const userId = requireUserId();
+      const saved = await persistPersonalRecord(db, userId, exerciseKey, weightKg);
+      setPersonalRecords((current) => saved
+        ? [...current.filter((record) => record.exerciseKey !== exerciseKey), saved]
+        : current.filter((record) => record.exerciseKey !== exerciseKey));
     },
     updateWeeklyPlan: async (draft) => {
       const userId = requireUserId();
@@ -304,9 +329,38 @@ export function GymTrackProvider({ children }: PropsWithChildren) {
       if (result === 'removed') setActiveWorkout(await getActiveWorkout(db, userId));
       return result;
     },
+    startCardio: async (workoutExerciseId) => {
+      const userId = requireUserId();
+      await startCardioTimer(db, userId, workoutExerciseId);
+      setActiveWorkout(await getActiveWorkout(db, userId));
+    },
+    pauseCardio: async (workoutExerciseId) => {
+      const userId = requireUserId();
+      await pauseCardioTimer(db, userId, workoutExerciseId);
+      setActiveWorkout(await getActiveWorkout(db, userId));
+    },
+    resumeCardio: async (workoutExerciseId) => {
+      const userId = requireUserId();
+      await resumeCardioTimer(db, userId, workoutExerciseId);
+      setActiveWorkout(await getActiveWorkout(db, userId));
+    },
+    finishCardio: async (workoutExerciseId) => {
+      const userId = requireUserId();
+      const elapsedSeconds = await finishCardioTimer(db, userId, workoutExerciseId);
+      setActiveWorkout(await getActiveWorkout(db, userId));
+      return elapsedSeconds;
+    },
+    syncCardioTimers: async () => {
+      const userId = requireUserId();
+      const completed = await completeExpiredCardioTimers(db, userId);
+      setActiveWorkout(await getActiveWorkout(db, userId));
+      return completed > 0;
+    },
     completeWorkout: async (sessionId) => { await finishWorkout(db, requireUserId(), sessionId); await refresh(); },
     cancelActiveWorkout: async (sessionId) => { await cancelWorkout(db, requireUserId(), sessionId); await refresh(); },
     previewRoutine: (request) => generateRoutinePreview(db, requireUserId(), request),
+    replacePreviewExercise: (preview, exerciseIndex, recentlyReplacedExerciseIds) => replaceRoutinePreviewExercise(db, requireUserId(), preview, exerciseIndex, recentlyReplacedExerciseIds),
+    prepareImportedRoutine: (payload) => prepareSharedRoutineImport(db, requireUserId(), payload),
     acceptRoutine: async (preview) => {
       const userId = requireUserId();
       const routineId = await saveRoutine(db, userId, preview);

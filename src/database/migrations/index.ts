@@ -5,6 +5,8 @@ import { schemaV2 } from '@/database/schema/v2';
 import { schemaV3 } from '@/database/schema/v3';
 import { schemaV4 } from '@/database/schema/v4';
 import { schemaV5 } from '@/database/schema/v5';
+import { schemaV6 } from '@/database/schema/v6';
+import { schemaV7 } from '@/database/schema/v7';
 
 type Migration = { version: number; name: string; sql: string };
 
@@ -14,6 +16,8 @@ const migrations: Migration[] = [
   { version: 3, name: 'profile_weekly_plans_and_workout_snapshots', sql: schemaV3 },
   { version: 4, name: 'authenticated_user_local_data_isolation', sql: schemaV4 },
   { version: 5, name: 'personal_equipment_inventory', sql: schemaV5 },
+  { version: 6, name: 'cardio_prescription_and_timer', sql: schemaV6 },
+  { version: 7, name: 'personal_records', sql: schemaV7 },
 ];
 
 export async function runMigrations(db: SQLiteDatabase) {

@@ -1,47 +1,157 @@
 # GymTrack 🏋️
 
-GymTrack is a mobile application developed with [Expo](https://expo.dev) and [React Native](https://reactnative.dev/) for tracking, monitoring, and analyzing workout sessions.
+GymTrack es una aplicación móvil desarrollada con [Expo](https://expo.dev) y [React Native](https://reactnative.dev/) para el registro, monitoreo y análisis de sesiones de entrenamiento físico.
 
-The project is designed to go beyond basic workout logging by measuring relevant training metrics such as **total workout time, effective training time, rest time, average rest duration, and performance progress**.
+El proyecto busca ir más allá del registro básico de entrenamientos, permitiendo medir métricas como **tiempo total de entrenamiento, tiempo efectivo, tiempo de descanso, descanso promedio y progreso del rendimiento**.
 
-In future versions, GymTrack may integrate with smartwatches and wearable sensors to collect real-time information during workouts.
+En futuras versiones, GymTrack podrá integrarse con relojes inteligentes y sensores portátiles para obtener información en tiempo real durante los entrenamientos.
 
-## 🚀 Project overview
+---
 
-GymTrack aims to provide users with a simple and intelligent way to understand their workouts.
+## 📋 Descripción del proyecto
 
-The main concept is to distinguish between:
+GymTrack tiene como objetivo proporcionar al usuario una herramienta sencilla e inteligente para comprender mejor sus sesiones de entrenamiento.
 
-* **Total workout time**
-* **Effective workout time**
-* **Rest time**
-* **Average rest duration**
-* **Exercise performance**
-* **Workout history and progress**
+El concepto principal consiste en diferenciar:
 
-The long-term goal is to create a system capable of combining mobile application data with information obtained from wearable devices.
+* **Tiempo total de entrenamiento**
+* **Tiempo efectivo de entrenamiento**
+* **Tiempo de descanso**
+* **Tiempo promedio de descanso**
+* **Rendimiento durante el ejercicio**
+* **Historial y progreso**
 
-## 🛠️ Technology stack
+A largo plazo, el proyecto busca combinar la información obtenida desde la aplicación móvil con datos provenientes de dispositivos portátiles.
 
-This project is currently based on the following technologies:
+---
 
-* [React Native](https://reactnative.dev/) `0.86`
-* [Expo](https://expo.dev/) `SDK 57`
-* [React](https://react.dev/) `19.2.3`
-* [TypeScript](https://www.typescriptlang.org/)
-* [Expo Router](https://docs.expo.dev/router/introduction/)
-* [Node.js](https://nodejs.org/) `24.19.0`
-* npm `11.x`
-* Java / OpenJDK `17`
-* Android Studio
-* Android SDK `API 36`
-* Android Emulator — Pixel 9
-* Git
-* Visual Studio Code
+## 🎯 Objetivo general
 
-## 📁 Project structure
+Desarrollar una aplicación móvil que permita **registrar, monitorear y analizar sesiones de entrenamiento**, proporcionando métricas que ayuden al usuario a conocer su desempeño y evolución.
 
-The project uses Expo Router and a feature-oriented structure:
+---
+
+## 🧩 Problemática
+
+Actualmente, muchas aplicaciones de entrenamiento se enfocan principalmente en registrar:
+
+* Ejercicios realizados.
+* Series.
+* Repeticiones.
+* Peso utilizado.
+* Duración general del entrenamiento.
+
+Sin embargo, existe una oportunidad para obtener información más detallada sobre **cómo se desarrolla realmente una sesión de entrenamiento**.
+
+GymTrack busca analizar aspectos como:
+
+* ¿Cuánto tiempo duró realmente el entrenamiento?
+* ¿Cuánto tiempo estuvo el usuario realizando actividad?
+* ¿Cuánto tiempo permaneció descansando?
+* ¿Cuál fue el descanso promedio?
+* ¿Cómo cambia su rendimiento con el paso del tiempo?
+
+---
+
+## 🚀 Funcionalidades
+
+### 👤 Gestión de usuario
+
+* [ ] Registro de usuarios
+* [ ] Inicio de sesión
+* [ ] Perfil de usuario
+* [ ] Preferencias de entrenamiento
+
+### 🏋️ Gestión de entrenamientos
+
+* [ ] Crear entrenamientos
+* [ ] Agregar ejercicios
+* [ ] Registrar series
+* [ ] Registrar repeticiones
+* [ ] Registrar peso
+* [ ] Iniciar entrenamiento
+* [ ] Finalizar entrenamiento
+
+### ⏱️ Monitoreo del entrenamiento
+
+GymTrack busca diferenciar:
+
+```text
+Entrenamiento
+│
+├── Tiempo total
+│
+├── Tiempo efectivo
+│
+└── Tiempo de descanso
+```
+
+Se contempla registrar:
+
+* Tiempo total.
+* Tiempo efectivo.
+* Tiempo de descanso.
+* Tiempo promedio de descanso.
+* Duración de cada ejercicio.
+* Rendimiento durante la sesión.
+
+### 📊 Estadísticas
+
+* [ ] Historial de entrenamientos
+* [ ] Seguimiento del progreso
+* [ ] Estadísticas de rendimiento
+* [ ] Gráficas
+* [ ] Estadísticas semanales
+* [ ] Estadísticas mensuales
+
+### ⌚ Integración con dispositivos inteligentes
+
+Como parte de la evolución del proyecto se contempla la integración con:
+
+* Relojes inteligentes.
+* Bandas inteligentes.
+* Sensores portátiles.
+* Dispositivos compatibles mediante Bluetooth.
+
+La finalidad será obtener datos en tiempo real durante el entrenamiento.
+
+---
+
+## 🛠️ Tecnologías utilizadas
+
+### Aplicación móvil
+
+| Tecnología       | Versión | Uso                                    |
+| ---------------- | ------: | -------------------------------------- |
+| **React Native** |    0.86 | Desarrollo de la aplicación móvil      |
+| **Expo**         |  SDK 57 | Framework y herramientas de desarrollo |
+| **React**        |  19.2.3 | Biblioteca principal                   |
+| **TypeScript**   |     5.x | Tipado estático                        |
+| **Expo Router**  |   ~57.x | Navegación basada en archivos          |
+
+### Entorno de desarrollo
+
+| Herramienta            |        Versión |
+| ---------------------- | -------------: |
+| **Node.js**            |        24.19.0 |
+| **npm**                |           11.x |
+| **Java / OpenJDK**     |             17 |
+| **Visual Studio Code** |        1.131.0 |
+| **Git**                | Última versión |
+
+### Android
+
+| Herramienta        | Configuración |
+| ------------------ | ------------- |
+| **Android Studio** | Instalado     |
+| **Android SDK**    | API 36        |
+| **Emulador**       | Pixel 9       |
+| **Arquitectura**   | x86_64        |
+| **Sistema**        | Android 16    |
+
+---
+
+## 📁 Estructura del proyecto
 
 ```text
 GymTrack/
@@ -108,15 +218,17 @@ GymTrack/
 └── README.md
 ```
 
-## 📂 Main directories
+---
 
-### `app`
+## 📂 Descripción de las carpetas
 
-Contains the application's screens and routes.
+### `app/`
 
-GymTrack uses [Expo Router](https://docs.expo.dev/router/introduction/), which provides file-based routing.
+Contiene las pantallas y rutas de la aplicación.
 
-For example:
+GymTrack utiliza [Expo Router](https://docs.expo.dev/router/introduction/), que permite utilizar un sistema de **navegación basado en archivos**.
+
+Por ejemplo:
 
 ```text
 app/
@@ -125,25 +237,31 @@ app/
 └── profile.tsx
 ```
 
-Each file represents a route within the application.
+Cada archivo representa una ruta dentro de la aplicación.
 
-### `components`
+---
 
-Contains reusable interface components such as:
+### `components/`
 
-* Buttons
-* Cards
-* Inputs
-* Exercise cards
-* Workout statistics
-* Timers
-* Charts
+Contiene componentes reutilizables de la interfaz.
 
-### `hooks`
+Ejemplos:
 
-Contains reusable application logic.
+* Botones.
+* Tarjetas.
+* Formularios.
+* Tarjetas de ejercicios.
+* Temporizadores.
+* Estadísticas.
+* Gráficas.
 
-Examples:
+---
+
+### `hooks/`
+
+Contiene lógica reutilizable mediante hooks personalizados.
+
+Ejemplos:
 
 ```text
 useWorkout()
@@ -151,9 +269,11 @@ useTimer()
 useBluetooth()
 ```
 
-### `services`
+---
 
-Contains communication with external services and hardware.
+### `services/`
+
+Contiene la comunicación con servicios externos y dispositivos.
 
 ```text
 services/
@@ -162,288 +282,303 @@ services/
 └── sensors/
 ```
 
-This directory will be especially important when wearable devices and sensors are integrated.
+Esta sección será especialmente importante cuando se implemente la comunicación con relojes inteligentes y sensores.
 
-### `types`
+---
 
-Contains TypeScript definitions used throughout the application.
+### `types/`
 
-### `utils`
+Contiene las definiciones de tipos de TypeScript utilizadas en el proyecto.
 
-Contains reusable utility functions and calculations related to workouts, time, and performance metrics.
+---
 
-## ⏱️ Workout tracking
+### `constants/`
 
-One of the main features of GymTrack is the ability to differentiate between the different states of a workout session.
+Contiene valores constantes utilizados por la aplicación, como:
 
-```text
-Workout session
-│
-├── Total time
-│
-├── Effective time
-│
-└── Rest time
-```
+* Colores.
+* Configuración.
+* Valores predeterminados.
 
-The application will use these values to generate useful workout metrics.
+---
 
-### Total workout time
+### `utils/`
 
-The complete duration of a workout session.
+Contiene funciones auxiliares y cálculos.
 
-### Effective workout time
-
-The time during which the user is actively performing an exercise.
-
-### Rest time
-
-The time between active exercise periods.
-
-### Average rest time
-
-The average duration of the user's rest periods during a workout.
-
-## 📊 Planned features
-
-### User management
-
-* [ ] User registration
-* [ ] Login
-* [ ] User profile
-* [ ] User preferences
-
-### Workout management
-
-* [ ] Create workouts
-* [ ] Add exercises
-* [ ] Register sets
-* [ ] Register repetitions
-* [ ] Register weight
-* [ ] Start workout
-* [ ] Finish workout
-
-### Workout monitoring
-
-* [ ] Workout timer
-* [ ] Effective time tracking
-* [ ] Rest time tracking
-* [ ] Average rest calculation
-* [ ] Workout summary
-
-### Statistics
-
-* [ ] Workout history
-* [ ] Progress tracking
-* [ ] Performance statistics
-* [ ] Charts
-* [ ] Weekly statistics
-* [ ] Monthly statistics
-
-### Wearable integration
-
-* [ ] Bluetooth communication
-* [ ] Smartwatch integration
-* [ ] Sensor data reception
-* [ ] Real-time data processing
-* [ ] Activity detection
-
-## 🏗️ Development architecture
-
-The application is planned around several main layers:
+Ejemplos:
 
 ```text
-                    GymTrack
-                       │
-                       ▼
-                React Native
-                    + Expo
-                       │
-          ┌────────────┼────────────┐
-          │            │            │
-          ▼            ▼            ▼
-        UI           Logic       Services
-          │            │            │
-          │            │      ┌─────┴─────┐
-          │            │      │           │
-          ▼            ▼      ▼           ▼
-    Components      Hooks   Bluetooth    API
-                                   │
-                                   ▼
-                              Wearables
-                               / Sensors
+calculateEffectiveTime()
+calculateRestAverage()
+formatDuration()
 ```
 
-The objective is to keep the user interface, business logic, calculations, and external integrations separated.
+---
 
-## 📱 Application flow
+## 🏗️ Arquitectura del proyecto
 
-The initial application flow is planned as:
+La arquitectura de GymTrack busca mantener separadas la interfaz, la lógica de negocio y los servicios externos.
 
 ```text
-                    GymTrack
-                       │
-              ┌────────┴────────┐
-              │                 │
-             Auth             Main App
-              │                 │
-        ┌─────┴─────┐     ┌─────┴──────────┐
-        │           │     │        │        │
-      Login      Register Home   History  Profile
-                               
-                              │
-                              ▼
-                         Workout
-                              │
-                    ┌─────────┴─────────┐
-                    │                   │
-                 Active              Summary
-                    │                   │
-                    ▼                   ▼
-                Metrics             Results
+                       GymTrack
+                          │
+                          ▼
+                   React Native
+                       + Expo
+                          │
+            ┌─────────────┼─────────────┐
+            │             │             │
+            ▼             ▼             ▼
+           UI           Lógica       Servicios
+            │             │             │
+            ▼             ▼       ┌─────┴─────┐
+       Components       Hooks     │           │
+                                  ▼           ▼
+                              Bluetooth      API
+                                  │
+                                  ▼
+                              Dispositivos
+                               inteligentes
 ```
 
-## ⚙️ Get started
+---
 
-### 1. Install dependencies
+## 📱 Flujo de la aplicación
+
+```text
+                       GymTrack
+                          │
+                 ┌────────┴────────┐
+                 │                 │
+              Autenticación     Aplicación
+                 │                 │
+          ┌──────┴──────┐    ┌─────┴─────────┐
+          │             │    │       │       │
+        Login       Registro Inicio Historial Perfil
+                                  │
+                                  ▼
+                             Entrenamiento
+                                  │
+                         ┌────────┴────────┐
+                         │                 │
+                       Activo            Resumen
+                         │                 │
+                         ▼                 ▼
+                      Métricas          Resultados
+```
+
+---
+
+## ⏱️ Seguimiento del entrenamiento
+
+Una de las principales características de GymTrack será distinguir entre el **tiempo total**, el **tiempo efectivo** y el **tiempo de descanso**.
+
+### Tiempo total
+
+Tiempo transcurrido desde el inicio hasta el final de una sesión.
+
+### Tiempo efectivo
+
+Tiempo durante el cual el usuario realmente está realizando el ejercicio.
+
+### Tiempo de descanso
+
+Tiempo durante el cual el usuario no está realizando actividad física.
+
+### Tiempo promedio de descanso
+
+Promedio de duración de los períodos de descanso registrados durante una sesión.
+
+---
+
+## ⚙️ Instalación
+
+### Requisitos
+
+Antes de comenzar, se recomienda contar con:
+
+* Node.js 24.x
+* npm
+* Git
+* Visual Studio Code
+* Android Studio
+* Android SDK
+* Java / OpenJDK 17
+
+---
+
+### 1. Clonar el repositorio
+
+```bash
+git clone <URL_DEL_REPOSITORIO>
+```
+
+Entrar a la carpeta:
+
+```bash
+cd GymTrack
+```
+
+---
+
+### 2. Instalar las dependencias
 
 ```bash
 npm install
 ```
 
-### 2. Start the development server
+---
+
+### 3. Iniciar la aplicación
 
 ```bash
 npx expo start
 ```
 
-In the output, you'll find options to open the application in:
+En la terminal aparecerán diferentes opciones para abrir la aplicación:
 
-* [Development build](https://docs.expo.dev/develop/development-builds/introduction/)
-* [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-* [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-* [Expo Go](https://expo.dev/go)
+* **Development Build**
+* **Android Emulator**
+* **iOS Simulator**
+* **Expo Go**
 
-### 3. Start the application on Android
+---
 
-If an Android emulator is already running:
+### 4. Ejecutar en Android
+
+Con el emulador de Android abierto:
 
 ```bash
 npx expo start --android
 ```
 
-You can also press:
+También puedes presionar:
 
 ```text
 a
 ```
 
-in the Expo CLI terminal.
+dentro de la terminal de Expo.
 
-## 🔍 Check the development environment
+---
 
-To check the Expo environment:
+## 🔍 Comprobar el entorno
+
+Para comprobar que la configuración de Expo es correcta:
 
 ```bash
 npx expo-doctor
 ```
 
-To verify TypeScript:
+Para comprobar TypeScript:
 
 ```bash
 npx tsc --noEmit
 ```
 
-To check installed dependencies:
+Para consultar las dependencias instaladas:
 
 ```bash
 npm list --depth=0
 ```
 
-To check Expo dependencies:
+Para comprobar las versiones compatibles de Expo:
 
 ```bash
 npx expo install --check
 ```
 
-To automatically correct incompatible Expo dependencies:
+Para corregir automáticamente dependencias incompatibles:
 
 ```bash
 npx expo install --fix
 ```
 
+---
+
 ## 🧹 Linting
 
-To run the project's linter:
+Para ejecutar ESLint:
 
 ```bash
 npm run lint
 ```
 
-Or:
+También puede utilizarse:
 
 ```bash
 npx expo lint
 ```
 
-For additional information, see the [Expo ESLint documentation](https://docs.expo.dev/guides/using-eslint/).
+Más información en la [documentación de ESLint para Expo](https://docs.expo.dev/guides/using-eslint/).
 
-## 🔄 Reset the project
+---
 
-If you want to remove the starter code and create a clean application directory, run:
+## 🔄 Reiniciar el proyecto
+
+Expo incluye un comando para eliminar el código inicial del template:
 
 ```bash
 npm run reset-project
 ```
 
-This command moves the starter code to the `app-example` directory and creates a new `app` directory where development can begin.
+Este comando mueve el código inicial a:
 
-> ⚠️ Only use this command if you intentionally want to reset the starter project.
+```text
+app-example/
+```
 
-## 🤖 Native Android project
+y crea una carpeta `app/` limpia para comenzar el desarrollo.
 
-GymTrack initially uses Expo's managed workflow.
+> ⚠️ Utilizar este comando únicamente cuando se quiera reiniciar intencionalmente la estructura inicial del proyecto.
 
-Therefore, the project may not contain:
+---
+
+## 🤖 Proyecto nativo de Android
+
+GymTrack utiliza inicialmente el flujo administrado de Expo.
+
+Por lo tanto, durante las primeras etapas puede que el proyecto no contenga:
 
 ```text
 android/
 ios/
 ```
 
-during the initial development stage.
-
-When direct native development becomes necessary, the native projects can be generated with:
+Cuando sea necesario trabajar directamente con código nativo, se pueden generar los proyectos mediante:
 
 ```bash
 npx expo prebuild
 ```
 
-> ⚠️ Do not run `expo prebuild` unless native Android or iOS configuration is required.
+> ⚠️ No ejecutar `expo prebuild` a menos que sea necesario realizar configuraciones nativas.
 
-## 📦 Installing packages
+---
 
-When installing packages related to Expo or React Native, use:
+## 📦 Instalación de nuevas dependencias
+
+Para instalar paquetes relacionados con Expo o React Native se recomienda utilizar:
 
 ```bash
-npx expo install <package>
+npx expo install <paquete>
 ```
 
-instead of manually selecting a version.
-
-For example:
+Por ejemplo:
 
 ```bash
 npx expo install expo-camera
 ```
 
-This helps install a version compatible with the current Expo SDK.
+Esto permite instalar una versión compatible con el SDK de Expo utilizado por el proyecto.
 
-## 🌿 Git workflow
+---
 
-The project uses Git for version control.
+## 🌿 Control de versiones
 
-Recommended branch structure:
+GymTrack utiliza Git para el control de versiones.
+
+Se recomienda trabajar con ramas:
 
 ```text
 main
@@ -457,139 +592,157 @@ main
     └── feature/bluetooth
 ```
 
-Create a new feature branch:
+Crear una nueva rama:
 
 ```bash
 git checkout -b feature/workout
 ```
 
-Commit changes:
+Guardar los cambios:
 
 ```bash
 git add .
-git commit -m "feat: add workout screen"
 ```
 
-Push the branch:
+Crear un commit:
+
+```bash
+git commit -m "feat: agregar pantalla de entrenamiento"
+```
+
+Subir la rama:
 
 ```bash
 git push origin feature/workout
 ```
 
-## 📝 Commit conventions
+---
 
-GymTrack follows a Conventional Commits style.
+## 📝 Convención de commits
 
-| Type       | Description                  |
-| ---------- | ---------------------------- |
-| `feat`     | New functionality            |
-| `fix`      | Bug fix                      |
-| `refactor` | Code restructuring           |
-| `style`    | Formatting or visual changes |
-| `docs`     | Documentation                |
-| `test`     | Tests                        |
-| `chore`    | Maintenance/configuration    |
+Se recomienda utilizar una estructura basada en **Conventional Commits**.
 
-Examples:
+| Tipo       | Descripción                   |
+| ---------- | ----------------------------- |
+| `feat`     | Nueva funcionalidad           |
+| `fix`      | Corrección de errores         |
+| `refactor` | Reestructuración del código   |
+| `style`    | Cambios de formato o diseño   |
+| `docs`     | Cambios en documentación      |
+| `test`     | Pruebas                       |
+| `chore`    | Mantenimiento o configuración |
 
-```text
-feat: add workout timer
-fix: correct rest time calculation
-refactor: reorganize workout services
-docs: update README
-```
-
-## 🗺️ Roadmap
-
-### Phase 1 — Project setup
-
-* [x] Create Expo project
-* [x] Configure React Native
-* [x] Configure TypeScript
-* [x] Configure Expo Router
-* [x] Configure Android environment
-* [ ] Define final architecture
-
-### Phase 2 — User interface
-
-* [ ] Home screen
-* [ ] Login
-* [ ] Registration
-* [ ] Profile
-* [ ] Dashboard
-* [ ] Workout screen
-* [ ] History
-* [ ] Progress
-
-### Phase 3 — Workout system
-
-* [ ] Exercise management
-* [ ] Sets and repetitions
-* [ ] Weight tracking
-* [ ] Workout timer
-* [ ] Effective time
-* [ ] Rest time
-* [ ] Workout summary
-
-### Phase 4 — Statistics
-
-* [ ] Workout history
-* [ ] Performance metrics
-* [ ] Charts
-* [ ] Progress analysis
-* [ ] Weekly statistics
-* [ ] Monthly statistics
-
-### Phase 5 — Wearables
-
-* [ ] Bluetooth communication
-* [ ] Smartwatch research
-* [ ] Sensor integration
-* [ ] Real-time data
-* [ ] Activity detection
-
-### Phase 6 — Backend
-
-* [ ] API
-* [ ] Database
-* [ ] Authentication
-* [ ] Cloud synchronization
-* [ ] Workout data storage
-
-## 🔐 Security
-
-Sensitive information must never be committed to the repository.
-
-Do not upload:
+Ejemplos:
 
 ```text
-.env
-API keys
-Access tokens
-Passwords
-Private credentials
+feat: agregar cronómetro de entrenamiento
+fix: corregir cálculo del tiempo de descanso
+refactor: reorganizar servicios de entrenamiento
+docs: actualizar README
 ```
-
-Use environment variables for sensitive configuration.
-
-## 📚 Useful resources
-
-* [Expo documentation](https://docs.expo.dev/)
-* [Expo Router documentation](https://docs.expo.dev/router/introduction/)
-* [React Native documentation](https://reactnative.dev/docs/getting-started)
-* [React documentation](https://react.dev/)
-* [TypeScript documentation](https://www.typescriptlang.org/docs/)
-* [Android Studio documentation](https://developer.android.com/studio)
-* [Expo tutorial](https://docs.expo.dev/tutorial/introduction/)
-
-## 📌 Project status
-
-**Status:** 🚧 In development
-
-GymTrack is currently in the initial development stage. The project architecture and core application functionality are being established before implementing advanced workout analytics and wearable-device integration.
 
 ---
 
-## 🏋️ GymTrack
+## 🗺️ Roadmap
 
-**Train. Track. Analyze. Improve.**
+### Fase 1 — Configuración del proyecto
+
+* [x] Crear proyecto Expo
+* [x] Configurar React Native
+* [x] Configurar TypeScript
+* [x] Configurar Expo Router
+* [x] Configurar entorno Android
+* [ ] Definir arquitectura final
+
+### Fase 2 — Interfaz
+
+* [ ] Pantalla principal
+* [ ] Inicio de sesión
+* [ ] Registro
+* [ ] Perfil
+* [ ] Dashboard
+* [ ] Historial
+* [ ] Progreso
+* [ ] Pantalla de entrenamiento
+
+### Fase 3 — Sistema de entrenamiento
+
+* [ ] Gestión de ejercicios
+* [ ] Series y repeticiones
+* [ ] Registro de peso
+* [ ] Cronómetro
+* [ ] Tiempo efectivo
+* [ ] Tiempo de descanso
+* [ ] Resumen de entrenamiento
+
+### Fase 4 — Estadísticas
+
+* [ ] Historial
+* [ ] Métricas de rendimiento
+* [ ] Gráficas
+* [ ] Análisis de progreso
+* [ ] Estadísticas semanales
+* [ ] Estadísticas mensuales
+
+### Fase 5 — Dispositivos inteligentes
+
+* [ ] Investigación de dispositivos compatibles
+* [ ] Comunicación Bluetooth
+* [ ] Integración con smartwatch
+* [ ] Recepción de datos
+* [ ] Procesamiento en tiempo real
+* [ ] Detección de actividad
+
+### Fase 6 — Backend
+
+* [ ] API
+* [ ] Base de datos
+* [ ] Autenticación
+* [ ] Sincronización
+* [ ] Almacenamiento de entrenamientos
+
+---
+
+## 🔐 Seguridad
+
+No se deben subir datos sensibles al repositorio.
+
+Nunca incluir:
+
+```text
+.env
+API Keys
+Tokens
+Contraseñas
+Credenciales privadas
+```
+
+La información sensible deberá manejarse mediante variables de entorno y mecanismos seguros de configuración.
+
+---
+
+## 📚 Recursos
+
+* [Documentación de Expo](https://docs.expo.dev/)
+* [Expo Router](https://docs.expo.dev/router/introduction/)
+* [Documentación de React Native](https://reactnative.dev/docs/getting-started)
+* [Documentación de React](https://react.dev/)
+* [Documentación de TypeScript](https://www.typescriptlang.org/docs/)
+* [Android Studio](https://developer.android.com/studio)
+* [Tutorial de Expo](https://docs.expo.dev/tutorial/introduction/)
+
+---
+
+## 📌 Estado del proyecto
+
+**Estado:** 🚧 En desarrollo
+
+GymTrack se encuentra actualmente en la etapa inicial de desarrollo, enfocada en establecer la arquitectura, configuración del entorno y funcionalidades principales de la aplicación.
+
+Las siguientes etapas estarán orientadas a la implementación del sistema de entrenamientos, análisis de métricas y posteriormente la integración con dispositivos inteligentes.
+
+---
+
+# 🏋️ GymTrack
+
+**Entrena. Registra. Analiza. Mejora.**

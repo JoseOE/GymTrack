@@ -2,8 +2,12 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { listExercisesForMuscleIds } from '@/database/repositories/catalogRepository';
 import { getActiveTrainingLocation, listAvailableExerciseIds } from '@/database/repositories/equipmentRepository';
-import type { ActiveWorkout, CatalogExercise, RecentWorkout, RemoveWorkoutSetResult, WeeklyPlanDay, WorkoutExercise, WorkoutSet } from '@/domain/models';
+import type {
+  ActiveWorkout, CardioTimerState, CatalogExercise, ExerciseMode, RecentWorkout, RemoveWorkoutSetResult,
+  WeeklyPlanDay, WorkoutExercise, WorkoutSet,
+} from '@/domain/models';
 import { getDefaultExerciseCount } from '@/services/weeklyPlanService';
+import { DEFAULT_CARDIO_DURATION_MINUTES, getCardioElapsedSeconds, isValidCardioDuration } from '@/utils/cardioTimer';
 import { createId } from '@/utils/id';
 
 type ActiveHeaderRow = {
@@ -22,6 +26,12 @@ type ActiveExerciseRow = {
   exercise_name: string;
   muscle_name: string;
   order_index: number;
+  exercise_mode: ExerciseMode;
+  target_duration_minutes: number | null;
+  cardio_timer_state: CardioTimerState;
+  cardio_elapsed_seconds: number;
+  cardio_last_started_at: string | null;
+  cardio_completed: number;
   set_id: string | null;
   set_number: number | null;
   weight_kg: number | null;
@@ -29,9 +39,16 @@ type ActiveExerciseRow = {
   completed: number | null;
 };
 
-type RoutineExerciseRow = { exercise_id: string; order_index: number; target_sets: number };
+type RoutineExerciseRow = {
+  exercise_id: string;
+  order_index: number;
+  target_sets: number;
+  exercise_mode: ExerciseMode;
+  target_duration_minutes: number | null;
+};
 
 export async function getActiveWorkout(db: SQLiteDatabase, ownerUserId: string): Promise<ActiveWorkout | null> {
+  await completeExpiredCardioTimers(db, ownerUserId);
   const header = await db.getFirstAsync<ActiveHeaderRow>(
     `SELECT ws.id AS session_id, ws.routine_id, r.name AS routine_name, ws.display_name, ws.started_at,
       ws.scheduled_day_index, ws.counts_toward_goal
@@ -46,7 +63,9 @@ export async function getActiveWorkout(db: SQLiteDatabase, ownerUserId: string):
 
   const rows = await db.getAllAsync<ActiveExerciseRow>(
     `SELECT we.id AS workout_exercise_id, we.exercise_id, e.name AS exercise_name,
-      mg.name AS muscle_name, we.order_index, sets.id AS set_id, sets.set_number,
+      mg.name AS muscle_name, we.order_index, we.exercise_mode, we.target_duration_minutes,
+      we.cardio_timer_state, we.cardio_elapsed_seconds, we.cardio_last_started_at, we.cardio_completed,
+      sets.id AS set_id, sets.set_number,
       sets.weight_kg, sets.repetitions, sets.completed
      FROM workout_exercise we
      JOIN exercise e ON e.id = we.exercise_id
@@ -61,7 +80,20 @@ export async function getActiveWorkout(db: SQLiteDatabase, ownerUserId: string):
   for (const row of rows) {
     let exercise = exerciseMap.get(row.workout_exercise_id);
     if (!exercise) {
-      exercise = { id: row.workout_exercise_id, exerciseId: row.exercise_id, name: row.exercise_name, muscle: row.muscle_name, orderIndex: row.order_index, sets: [] };
+      exercise = {
+        id: row.workout_exercise_id,
+        exerciseId: row.exercise_id,
+        name: row.exercise_name,
+        muscle: row.muscle_name,
+        orderIndex: row.order_index,
+        mode: row.exercise_mode,
+        targetDurationMinutes: row.target_duration_minutes,
+        cardioTimerState: row.cardio_timer_state,
+        cardioElapsedSeconds: row.cardio_elapsed_seconds,
+        cardioLastStartedAt: row.cardio_last_started_at,
+        cardioCompleted: row.cardio_completed === 1,
+        sets: [],
+      };
       exerciseMap.set(row.workout_exercise_id, exercise);
     }
     if (row.set_id && row.set_number !== null) {
@@ -112,11 +144,23 @@ async function getScheduleExercises(db: SQLiteDatabase, ownerUserId: string, day
     if (!added) break;
     candidateIndex += 1;
   }
-  return selected.map((exercise, orderIndex) => ({ exercise_id: exercise.id, order_index: orderIndex, target_sets: exercise.exerciseType === 'cardio' ? 1 : 3 }));
+  const cardio = selected.find((exercise) => exercise.exerciseType === 'cardio');
+  const strength = selected.filter((exercise) => exercise.exerciseType !== 'cardio');
+  return [...strength, ...(cardio ? [cardio] : [])].map((exercise, orderIndex) => ({
+    exercise_id: exercise.id,
+    order_index: orderIndex,
+    target_sets: exercise.exerciseType === 'cardio' ? 0 : 3,
+    exercise_mode: exercise.exerciseType === 'cardio' ? 'cardio' as const : 'strength' as const,
+    target_duration_minutes: exercise.exerciseType === 'cardio'
+      ? isValidCardioDuration(day.estimatedMinutes ?? 0) ? day.estimatedMinutes : DEFAULT_CARDIO_DURATION_MINUTES
+      : null,
+  }));
 }
 
 function isValidWorkout(workout: ActiveWorkout | null) {
-  return Boolean(workout && workout.exercises.length > 0 && workout.exercises.every((exercise) => exercise.sets.length > 0));
+  return Boolean(workout && workout.exercises.length > 0 && workout.exercises.every((exercise) => exercise.mode === 'cardio'
+    ? Boolean(exercise.targetDurationMinutes && exercise.targetDurationMinutes > 0)
+    : exercise.sets.length > 0));
 }
 
 export async function startWorkout(db: SQLiteDatabase, ownerUserId: string, day: WeeklyPlanDay, isAdditional = false) {
@@ -135,7 +179,8 @@ export async function startWorkout(db: SQLiteDatabase, ownerUserId: string, day:
   let exercises: RoutineExerciseRow[];
   if (routine) {
     exercises = await db.getAllAsync<RoutineExerciseRow>(
-      'SELECT exercise_id, order_index, target_sets FROM routine_exercise WHERE routine_id = ? ORDER BY order_index',
+      `SELECT exercise_id, order_index, target_sets, exercise_mode, target_duration_minutes
+       FROM routine_exercise WHERE routine_id = ? ORDER BY order_index`,
       routine.id,
     );
   } else {
@@ -146,7 +191,7 @@ export async function startWorkout(db: SQLiteDatabase, ownerUserId: string, day:
   const sessionId = createId('workout');
   const now = new Date().toISOString();
   const sessionName = routine?.name ?? day.displayName;
-  const expectedSetCount = exercises.reduce((count, exercise) => count + exercise.target_sets, 0);
+  const expectedSetCount = exercises.reduce((count, exercise) => count + (exercise.exercise_mode === 'strength' ? exercise.target_sets : 0), 0);
   await db.withExclusiveTransactionAsync(async (transaction) => {
     await transaction.runAsync(
       `INSERT INTO workout_session
@@ -164,13 +209,18 @@ export async function startWorkout(db: SQLiteDatabase, ownerUserId: string, day:
     for (const exercise of exercises) {
       const workoutExerciseId = createId('workout-exercise');
       await transaction.runAsync(
-        'INSERT INTO workout_exercise (id, workout_session_id, exercise_id, order_index) VALUES (?, ?, ?, ?)',
+        `INSERT INTO workout_exercise
+          (id, workout_session_id, exercise_id, order_index, exercise_mode, target_duration_minutes,
+           cardio_timer_state, cardio_elapsed_seconds, cardio_last_started_at, cardio_completed)
+         VALUES (?, ?, ?, ?, ?, ?, 'idle', 0, NULL, 0)`,
         workoutExerciseId,
         sessionId,
         exercise.exercise_id,
         exercise.order_index,
+        exercise.exercise_mode,
+        exercise.target_duration_minutes,
       );
-      for (let setNumber = 1; setNumber <= exercise.target_sets; setNumber += 1) {
+      for (let setNumber = 1; exercise.exercise_mode === 'strength' && setNumber <= exercise.target_sets; setNumber += 1) {
         await transaction.runAsync(
           `INSERT INTO workout_set
             (id, workout_exercise_id, set_number, weight_kg, repetitions, completed, created_at)
@@ -191,7 +241,7 @@ export async function startWorkout(db: SQLiteDatabase, ownerUserId: string, day:
       sessionId,
       ownerUserId,
     );
-    if (!shape || shape.exercise_count !== exercises.length || shape.set_count !== expectedSetCount || shape.exercise_count === 0 || shape.set_count === 0) {
+    if (!shape || shape.exercise_count !== exercises.length || shape.set_count !== expectedSetCount || shape.exercise_count === 0) {
       throw new Error('No se pudo construir una sesión completa para el plan de hoy.');
     }
   });
@@ -209,7 +259,8 @@ export async function saveWorkoutSet(db: SQLiteDatabase, ownerUserId: string, se
      WHERE id = ? AND EXISTS (
        SELECT 1 FROM workout_exercise exercise
        JOIN workout_session session ON session.id = exercise.workout_session_id
-       WHERE exercise.id = workout_set.workout_exercise_id AND session.owner_user_id = ?
+       WHERE exercise.id = workout_set.workout_exercise_id AND exercise.exercise_mode = 'strength'
+         AND session.owner_user_id = ?
      )`,
     set.weightKg,
     set.repetitions,
@@ -225,7 +276,7 @@ export async function addWorkoutSet(db: SQLiteDatabase, ownerUserId: string, wor
      FROM workout_set
      JOIN workout_exercise exercise ON exercise.id = workout_set.workout_exercise_id
      JOIN workout_session session ON session.id = exercise.workout_session_id
-     WHERE workout_set.workout_exercise_id = ? AND session.owner_user_id = ?`,
+     WHERE workout_set.workout_exercise_id = ? AND exercise.exercise_mode = 'strength' AND session.owner_user_id = ?`,
     workoutExerciseId,
     ownerUserId,
   );
@@ -249,7 +300,7 @@ export async function deleteWorkoutSet(db: SQLiteDatabase, ownerUserId: string, 
      FROM workout_set target
      JOIN workout_exercise exercise ON exercise.id = target.workout_exercise_id
      JOIN workout_session session ON session.id = exercise.workout_session_id
-     WHERE target.id = ? AND session.owner_user_id = ?`,
+     WHERE target.id = ? AND exercise.exercise_mode = 'strength' AND session.owner_user_id = ?`,
     setId,
     ownerUserId,
   );
@@ -268,7 +319,153 @@ export async function deleteWorkoutSet(db: SQLiteDatabase, ownerUserId: string, 
   return result.changes > 0 ? 'removed' : 'not-found';
 }
 
+type CardioTimerRow = {
+  id: string;
+  target_duration_minutes: number;
+  cardio_timer_state: CardioTimerState;
+  cardio_elapsed_seconds: number;
+  cardio_last_started_at: string | null;
+};
+
+async function getOwnedCardioTimer(db: SQLiteDatabase, ownerUserId: string, workoutExerciseId: string) {
+  return db.getFirstAsync<CardioTimerRow>(
+    `SELECT exercise.id, exercise.target_duration_minutes, exercise.cardio_timer_state,
+      exercise.cardio_elapsed_seconds, exercise.cardio_last_started_at
+     FROM workout_exercise exercise
+     JOIN workout_session session ON session.id = exercise.workout_session_id
+     WHERE exercise.id = ? AND exercise.exercise_mode = 'cardio'
+       AND exercise.target_duration_minutes IS NOT NULL
+       AND session.owner_user_id = ? AND session.status = 'active'`,
+    workoutExerciseId,
+    ownerUserId,
+  );
+}
+
+function elapsedFromRow(row: CardioTimerRow, nowMs: number) {
+  return Math.min(
+    row.target_duration_minutes * 60,
+    getCardioElapsedSeconds({
+      state: row.cardio_timer_state,
+      targetDurationMinutes: row.target_duration_minutes,
+      elapsedSeconds: row.cardio_elapsed_seconds,
+      lastStartedAt: row.cardio_last_started_at,
+    }, nowMs),
+  );
+}
+
+export async function startCardioTimer(db: SQLiteDatabase, ownerUserId: string, workoutExerciseId: string) {
+  const row = await getOwnedCardioTimer(db, ownerUserId, workoutExerciseId);
+  if (!row || row.cardio_timer_state !== 'idle') throw new Error('El temporizador de Cardio no está listo para iniciar.');
+  const result = await db.runAsync(
+    `UPDATE workout_exercise SET cardio_timer_state = 'running', cardio_last_started_at = ?
+     WHERE id = ? AND cardio_timer_state = 'idle' AND EXISTS (
+       SELECT 1 FROM workout_session session
+       WHERE session.id = workout_exercise.workout_session_id AND session.owner_user_id = ? AND session.status = 'active'
+     )`,
+    new Date().toISOString(),
+    workoutExerciseId,
+    ownerUserId,
+  );
+  if (result.changes !== 1) throw new Error('No se pudo iniciar el temporizador de Cardio.');
+}
+
+export async function pauseCardioTimer(db: SQLiteDatabase, ownerUserId: string, workoutExerciseId: string) {
+  const row = await getOwnedCardioTimer(db, ownerUserId, workoutExerciseId);
+  if (!row || row.cardio_timer_state !== 'running') throw new Error('El temporizador de Cardio no está en marcha.');
+  const elapsedSeconds = elapsedFromRow(row, Date.now());
+  const completed = elapsedSeconds >= row.target_duration_minutes * 60;
+  const result = await db.runAsync(
+    `UPDATE workout_exercise
+     SET cardio_timer_state = ?, cardio_elapsed_seconds = ?, cardio_last_started_at = NULL, cardio_completed = ?
+     WHERE id = ? AND cardio_timer_state = 'running' AND EXISTS (
+       SELECT 1 FROM workout_session session
+       WHERE session.id = workout_exercise.workout_session_id AND session.owner_user_id = ? AND session.status = 'active'
+     )`,
+    completed ? 'completed' : 'paused',
+    elapsedSeconds,
+    completed ? 1 : 0,
+    workoutExerciseId,
+    ownerUserId,
+  );
+  if (result.changes !== 1) throw new Error('No se pudo pausar el temporizador de Cardio.');
+}
+
+export async function resumeCardioTimer(db: SQLiteDatabase, ownerUserId: string, workoutExerciseId: string) {
+  const row = await getOwnedCardioTimer(db, ownerUserId, workoutExerciseId);
+  if (!row || row.cardio_timer_state !== 'paused') throw new Error('El temporizador de Cardio no está pausado.');
+  const result = await db.runAsync(
+    `UPDATE workout_exercise SET cardio_timer_state = 'running', cardio_last_started_at = ?
+     WHERE id = ? AND cardio_timer_state = 'paused' AND EXISTS (
+       SELECT 1 FROM workout_session session
+       WHERE session.id = workout_exercise.workout_session_id AND session.owner_user_id = ? AND session.status = 'active'
+     )`,
+    new Date().toISOString(),
+    workoutExerciseId,
+    ownerUserId,
+  );
+  if (result.changes !== 1) throw new Error('No se pudo continuar el temporizador de Cardio.');
+}
+
+export async function finishCardioTimer(db: SQLiteDatabase, ownerUserId: string, workoutExerciseId: string) {
+  const row = await getOwnedCardioTimer(db, ownerUserId, workoutExerciseId);
+  if (!row || row.cardio_timer_state === 'completed') throw new Error('El temporizador de Cardio ya no está activo.');
+  const elapsedSeconds = elapsedFromRow(row, Date.now());
+  const result = await db.runAsync(
+    `UPDATE workout_exercise
+     SET cardio_timer_state = 'completed', cardio_elapsed_seconds = ?, cardio_last_started_at = NULL, cardio_completed = 1
+     WHERE id = ? AND cardio_timer_state <> 'completed' AND EXISTS (
+       SELECT 1 FROM workout_session session
+       WHERE session.id = workout_exercise.workout_session_id AND session.owner_user_id = ? AND session.status = 'active'
+     )`,
+    elapsedSeconds,
+    workoutExerciseId,
+    ownerUserId,
+  );
+  if (result.changes !== 1) throw new Error('No se pudo finalizar Cardio.');
+  return elapsedSeconds;
+}
+
+export async function completeExpiredCardioTimers(db: SQLiteDatabase, ownerUserId: string) {
+  const rows = await db.getAllAsync<CardioTimerRow>(
+    `SELECT exercise.id, exercise.target_duration_minutes, exercise.cardio_timer_state,
+      exercise.cardio_elapsed_seconds, exercise.cardio_last_started_at
+     FROM workout_exercise exercise
+     JOIN workout_session session ON session.id = exercise.workout_session_id
+     WHERE session.owner_user_id = ? AND session.status = 'active'
+       AND exercise.exercise_mode = 'cardio' AND exercise.cardio_timer_state = 'running'
+       AND exercise.target_duration_minutes IS NOT NULL`,
+    ownerUserId,
+  );
+  let completed = 0;
+  const nowMs = Date.now();
+  for (const row of rows) {
+    if (elapsedFromRow(row, nowMs) < row.target_duration_minutes * 60) continue;
+    const result = await db.runAsync(
+      `UPDATE workout_exercise
+       SET cardio_timer_state = 'completed', cardio_elapsed_seconds = target_duration_minutes * 60,
+         cardio_last_started_at = NULL, cardio_completed = 1
+       WHERE id = ? AND cardio_timer_state = 'running'`,
+      row.id,
+    );
+    completed += result.changes;
+  }
+  return completed;
+}
+
+async function pauseRunningCardioTimersForSession(db: SQLiteDatabase, ownerUserId: string, sessionId: string) {
+  const runningCardio = await db.getAllAsync<{ id: string }>(
+    `SELECT exercise.id FROM workout_exercise exercise
+     JOIN workout_session session ON session.id = exercise.workout_session_id
+     WHERE session.id = ? AND session.owner_user_id = ? AND session.status = 'active'
+       AND exercise.exercise_mode = 'cardio' AND exercise.cardio_timer_state = 'running'`,
+    sessionId,
+    ownerUserId,
+  );
+  for (const exercise of runningCardio) await pauseCardioTimer(db, ownerUserId, exercise.id);
+}
+
 export async function finishWorkout(db: SQLiteDatabase, ownerUserId: string, sessionId: string) {
+  await pauseRunningCardioTimersForSession(db, ownerUserId, sessionId);
   await db.runAsync(
     `UPDATE workout_session SET status = 'completed', completed_at = ?
      WHERE id = ? AND owner_user_id = ? AND status = 'active'`,
@@ -279,6 +476,7 @@ export async function finishWorkout(db: SQLiteDatabase, ownerUserId: string, ses
 }
 
 export async function cancelWorkout(db: SQLiteDatabase, ownerUserId: string, sessionId: string) {
+  await pauseRunningCardioTimersForSession(db, ownerUserId, sessionId);
   await db.runAsync(
     `UPDATE workout_session SET status = 'cancelled', completed_at = NULL
      WHERE id = ? AND owner_user_id = ? AND status = 'active'`,
